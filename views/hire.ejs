@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book A Project | Jarumiri Studios</title>
+  <meta name="description" content="Start your video editing project with Jarumiri Studios. Fill out our booking form and get a Client Request code instantly." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .nav-link { position: relative; }
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 0;
+      width: 0; height: 1px;
+      background: #f59e0b;
+      transition: width 0.25s ease;
+    }
+    .nav-link:hover::after { width: 100%; }
+    html { scroll-behavior: smooth; }
+
+    /* Step indicator */
+    .step-dot {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 600;
+      transition: all 0.3s ease;
+    }
+    .step-dot.active   { background: #f59e0b; color: #000; }
+    .step-dot.done     { background: #f59e0b; color: #000; }
+    .step-dot.inactive { background: rgba(255,255,255,0.06); color: #6b7280; border: 1px solid rgba(255,255,255,0.08); }
+    .step-line { flex: 1; height: 1px; background: rgba(255,255,255,0.08); margin-top: 15px; }
+    .step-line.done { background: #f59e0b; }
+
+    /* Form inputs */
+    .form-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 14px 16px;
+      color: #fff;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+    .form-input:focus {
+      border-color: rgba(245,158,11,0.5);
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.08);
+    }
+    .form-input::placeholder { color: #4b5563; }
+    select.form-input option { background: #111; color: #fff; }
+    textarea.form-input { resize: none; min-height: 120px; }
+    .form-label {
+      display: block; font-size: 13px; font-weight: 500;
+      color: #9ca3af; margin-bottom: 8px; letter-spacing: 0.02em;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: rgba(245,158,11,0.5);
+      background: rgba(245,158,11,0.03);
+    }
+    .drop-zone input[type="file"] { display: none; }
+
+    /* File list */
+    .file-item {
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 13px;
+    }
+
+    /* Step panels */
+    .step-panel { display: none; }
+    .step-panel.active { display: block; }
+
+    /* Error state */
+    .form-input.error { border-color: rgba(239,68,68,0.5); }
+    .field-error { font-size: 12px; color: #ef4444; margin-top: 5px; }
+
+    /* Custom dropdown */
+    .custom-select { position: relative; }
+    .custom-select-trigger {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      padding: 14px 16px;
+      color: #9ca3af;
+      font-size: 14px;
+      font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: space-between; gap-8px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+      text-align: left;
+      outline: none;
+    }
+    .custom-select-trigger.selected { color: #fff; }
+    .custom-select-trigger.open,
+    .custom-select-trigger:focus {
+      border-color: rgba(245,158,11,0.5);
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.08);
+    }
+    .custom-select-trigger.error { border-color: rgba(239,68,68,0.5); }
+    .custom-select-chevron {
+      flex-shrink: 0;
+      width: 16px; height: 16px;
+      color: #6b7280;
+      transition: transform 0.2s ease;
+    }
+    .custom-select-trigger.open .custom-select-chevron { transform: rotate(180deg); }
+    .custom-select-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px); left: 0; right: 0;
+      background: #111;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      z-index: 100;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+    .custom-select-menu.open { display: block; }
+    .custom-select-option {
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .custom-select-option:last-child { border-bottom: none; }
+    .custom-select-option:hover { background: rgba(245,158,11,0.08); }
+    .custom-select-option.active { background: rgba(245,158,11,0.12); }
+    .custom-select-option .opt-label { font-size: 14px; color: #fff; font-weight: 500; }
+    .custom-select-option .opt-desc  { font-size: 12px; color: #6b7280; margin-top: 2px; }
+    .custom-select-option .opt-check {
+      width: 18px; height: 18px; flex-shrink: 0;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.15);
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .custom-select-option.active .opt-check {
+      background: #f59e0b; border-color: #f59e0b;
+    }
+    button, [role="option"] { cursor: pointer; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- NAVBAR -->
+  <header class="fixed top-0 left-0 right-0 z-50 border-b border-white/5 backdrop-blur-md bg-[#080808]/80">
+    <nav class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="brand text-xl font-bold tracking-tight">
+        <span class="text-white">Jarumiri</span> Studios<span class="text-amber-400">.</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm text-gray-400 font-medium">
+        <a href="/#services" class="nav-link hover:text-white transition-colors">Services</a>
+        <a href="/#pricing"  class="nav-link hover:text-white transition-colors">Pricing</a>
+        <a href="/#about"    class="nav-link hover:text-white transition-colors">About</a>
+        <a href="/#career"   class="nav-link hover:text-white transition-colors">Careers</a>
+      </div>
+      <a href="/" class="text-sm font-medium text-gray-400 hover:text-white transition-colors">← Back to site</a>
+    </nav>
+  </header>
+
+  <!-- MAIN -->
+  <main class="pt-28 pb-20 px-6">
+    <div class="max-w-2xl mx-auto">
+
+      <% if (locals.success) { %>
+      <!-- ══════════ SUCCESS STATE ══════════ -->
+      <div class="text-center py-16">
+        <div class="w-20 h-20 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mx-auto mb-8">
+          <svg class="w-9 h-9 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h1 class="text-3xl font-bold text-white mb-3">Request received!</h1>
+        <p class="text-gray-400 text-base mb-10 max-w-sm mx-auto">We'll review your project brief and get back to you within 24 hours. Use your BR code to track your request.</p>
+
+        <div class="inline-block bg-white/[0.04] border border-white/10 rounded-2xl px-10 py-8 mb-6">
+          <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Your Booking Request Code</p>
+          <a href="/track?code=<%= crCode %>" class="text-4xl font-bold tracking-widest gradient-text hover:opacity-80 transition-opacity"><%= crCode %></a>
+        </div>
+
+        <% const TIER_PRICES = { Clip: 79, Scene: 189, Feature: 399 };
+           const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
+           if (locals.pricingTier && TIER_PRICES[pricingTier]) {
+             const base = TIER_PRICES[pricingTier];
+             const addonTotal = (locals.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+             const subtotal = base + addonTotal;
+             const discount = locals.discountAmount || 0;
+             const finalTotal = Math.max(0, subtotal - discount);
+        %>
+        <div class="inline-block text-left rounded-2xl border border-white/8 bg-white/3 px-6 py-4 mb-8 min-w-64">
+          <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Estimated total</p>
+          <div class="space-y-1.5 mb-3">
+            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-300"><%= pricingTier %> package</span><span class="text-white">$<%= base %></span></div>
+            <% (locals.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
+            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-400"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
+            <% } }) %>
+            <% if (discount > 0) { %>
+            <div class="flex justify-between gap-10 text-sm"><span class="text-green-400">Coupon (<%= locals.couponCode %>)</span><span class="text-green-400">−$<%= discount.toFixed(2) %></span></div>
+            <% } %>
+          </div>
+          <div class="border-t border-white/8 pt-3 flex items-baseline justify-between gap-10">
+            <span class="text-sm text-gray-400">Total</span>
+            <span class="text-xl font-bold text-white">$<%= finalTotal.toFixed(2) %></span>
+          </div>
+          <p class="text-[11px] text-gray-600 mt-2">Final price may vary based on project scope and complexity.</p>
+        </div>
+        <% } %>
+
+        <div class="flex flex-col sm:flex-row gap-3 justify-center mb-12">
+          <a href="/" class="px-8 py-3.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+            Back to home
+          </a>
+          <a href="https://t.me/jarumiri" target="_blank" class="px-8 py-3.5 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
+            Message us on Telegram
+          </a>
+        </div>
+
+        <% if (!locals.alreadyLinked) { %>
+        <div class="bg-white/3 border border-white/10 rounded-2xl px-8 py-8 text-left max-w-md mx-auto">
+          <% if (locals.hasAccount) { %>
+            <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-2">Add to your dashboard</p>
+            <h2 class="text-lg font-bold text-white mb-1">You already have an account</h2>
+            <p class="text-gray-400 text-sm mb-6">Log in to link this booking to your dashboard and track it alongside your other projects.</p>
+            <a href="/login?next=/dashboard&cr=<%= crCode %>" class="block w-full text-center px-6 py-3 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+              Log in to link this booking
+            </a>
+          <% } else { %>
+            <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-2">Optional</p>
+            <h2 class="text-lg font-bold text-white mb-1">Create a client dashboard</h2>
+            <p class="text-gray-400 text-sm mb-6">Track progress, request revisions, and manage payments — all in one place. Takes 10 seconds.</p>
+            <form action="/signup" method="POST" novalidate>
+              <input type="hidden" name="crCode" value="<%= crCode %>" />
+              <div class="mb-4">
+                <label class="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Email</label>
+                <input type="email" name="email" value="<%= bookingEmail %>" readonly
+                  class="w-full bg-white/4 border border-white/10 rounded-xl px-4 py-3 text-white text-sm cursor-default focus:outline-none" />
+              </div>
+              <div class="mb-4">
+                <label class="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">Choose a password</label>
+                <div style="position:relative;">
+                  <input type="password" name="password" required minlength="8" placeholder="Min. 8 characters"
+                    class="w-full bg-white/6 border border-white/10 rounded-xl px-4 py-3 pr-11 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 transition-colors" />
+                  <button type="button" onclick="togglePassword(this)" aria-label="Show password"
+                    style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;padding:0;color:#6b7280;display:flex;align-items:center;">
+                    <svg class="eye-show" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                    <svg class="eye-hide" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="display:none;"><path stroke-linecap="round" stroke-linejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                  </button>
+                </div>
+              </div>
+              <% if (locals.signupError) { %>
+              <p class="text-red-400 text-sm mb-4"><%= signupError %></p>
+              <% } %>
+              <button type="submit"
+                class="w-full px-6 py-3 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+                Create account &amp; go to dashboard
+              </button>
+            </form>
+            <p class="text-center text-gray-600 text-xs mt-4">Already have an account? <a href="/login" class="text-amber-400 hover:text-amber-300">Log in</a></p>
+          <% } %>
+        </div>
+        <% } else { %>
+        <div class="mt-4">
+          <a href="/dashboard" class="text-amber-400 text-sm hover:text-amber-300 transition-colors">Go to your dashboard →</a>
+        </div>
+        <% } %>
+      </div>
+
+      <% } else { %>
+      <!-- ══════════ FORM ══════════ -->
+
+      <!-- Header -->
+      <div class="mb-10">
+        <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-3">Book a project</p>
+        <h1 class="text-4xl font-bold text-white mb-3">Let's get started<span class="text-amber-400">.</span></h1>
+        <p class="text-gray-400">Tell us about your project — we'll handle the rest.</p>
+      </div>
+
+      <% if (locals.error) { %>
+      <script>document.addEventListener('DOMContentLoaded', function(){ showToast('Something went wrong', '<%= error.replace(/'/g, "\\'") %>', 'error'); });</script>
+      <% } %>
+
+      <% if (locals.loggedInUser) { %>
+      <!-- Logged-in identity strip -->
+      <div class="flex items-center gap-2.5 mb-8 px-4 py-3 rounded-xl bg-white/3 border border-white/8">
+        <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        <p class="text-sm text-gray-400">Booking as <span class="text-white font-medium"><%= locals.loggedInUser.email %></span></p>
+        <a href="/logout" class="ml-auto text-xs text-gray-600 hover:text-gray-400 transition-colors">Not you?</a>
+      </div>
+      <% } %>
+
+      <!-- Step indicator -->
+      <% if (locals.loggedInUser && locals.lastBooking) { %>
+      <div class="flex items-start gap-2 mb-10">
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="step-dot active" id="dot-1">1</div>
+          <span class="text-[11px] text-gray-400 font-medium">Project</span>
+        </div>
+        <div class="step-line" id="line-1"></div>
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="step-dot inactive" id="dot-2">2</div>
+          <span class="text-[11px] text-gray-400 font-medium">Files</span>
+        </div>
+      </div>
+      <% } else { %>
+      <div class="flex items-start gap-2 mb-10">
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="step-dot active" id="dot-1">1</div>
+          <span class="text-[11px] text-gray-400 font-medium">Contact</span>
+        </div>
+        <div class="step-line" id="line-1"></div>
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="step-dot inactive" id="dot-2">2</div>
+          <span class="text-[11px] text-gray-400 font-medium">Project</span>
+        </div>
+        <div class="step-line" id="line-2"></div>
+        <div class="flex flex-col items-center gap-1.5">
+          <div class="step-dot inactive" id="dot-3">3</div>
+          <span class="text-[11px] text-gray-400 font-medium">Files</span>
+        </div>
+      </div>
+      <% } %>
+
+      <!-- FORM (multipart for file uploads) -->
+      <form id="booking-form" action="/hire" method="POST" enctype="multipart/form-data" novalidate>
+        <% if (locals.loggedInUser && locals.lastBooking) { %>
+        <input type="hidden" name="name"           value="<%= locals.lastBooking.name %>" />
+        <input type="hidden" name="email"          value="<%= locals.loggedInUser.email %>" />
+        <input type="hidden" name="location"       value="<%= locals.lastBooking.location %>" />
+        <input type="hidden" name="telegramHandle" value="<%= locals.lastBooking.telegramHandle || '' %>" />
+        <% } %>
+
+        <!-- ── Step 1: Contact ── -->
+        <% if (!locals.loggedInUser || !locals.lastBooking) { %>
+        <div class="step-panel active" id="step-1">
+          <div class="space-y-5">
+            <div>
+              <label class="form-label" for="name">Full name <span class="text-amber-400">*</span></label>
+              <input class="form-input" type="text" id="name" name="name" placeholder="Your name" autocomplete="name" value="<%= locals.formData ? formData.name : '' %>" />
+              <p class="field-error hidden" id="err-name">Please enter your name.</p>
+            </div>
+            <div>
+              <label class="form-label" for="email">Email address <span class="text-amber-400">*</span></label>
+              <input class="form-input" type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" value="<%= locals.formData ? formData.email : (locals.loggedInUser ? locals.loggedInUser.email : '') %>" />
+              <p class="field-error hidden" id="err-email">Please enter a valid email address.</p>
+            </div>
+            <div>
+              <label class="form-label" for="location">Location <span class="text-amber-400">*</span></label>
+              <input class="form-input" type="text" id="location" name="location" placeholder="City, Country" autocomplete="country-name" value="<%= locals.formData ? formData.location : '' %>" />
+              <p class="field-error hidden" id="err-location">Please enter your location.</p>
+            </div>
+            <div>
+              <label class="form-label" for="telegramHandle">Telegram handle <span class="text-gray-400 font-normal">(optional — for large file transfers)</span></label>
+              <input class="form-input" type="text" id="telegramHandle" name="telegramHandle" placeholder="@username" value="<%= locals.formData ? formData.telegramHandle : '' %>" />
+            </div>
+          </div>
+
+          <div class="mt-8 flex justify-end">
+            <button type="button" onclick="goToStep(2)"
+              class="px-8 py-3.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+              Continue →
+            </button>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- ── Step 2: Project Details ── -->
+        <div class="step-panel <%= (locals.loggedInUser && locals.lastBooking) ? 'active' : '' %>" id="step-2">
+          <div class="space-y-5">
+            <!-- Pricing tier custom dropdown -->
+            <div>
+              <label class="form-label">Package <span class="text-amber-400">*</span></label>
+              <input type="hidden" id="pricingTier" name="pricingTier" value="<%= locals.formData ? formData.pricingTier : '' %>" />
+              <div class="custom-select" id="cs-tier">
+                <button type="button" class="custom-select-trigger <%= locals.formData && formData.pricingTier ? 'selected' : '' %>" id="cs-tier-trigger" onclick="toggleDropdown('cs-tier')" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="cs-tier-label"><%= locals.formData && formData.pricingTier ? formData.pricingTier : 'Select a package' %></span>
+                  <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+                </button>
+                <div class="custom-select-menu" id="cs-tier-menu" role="listbox">
+                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Clip'    ? 'active' : '' %>" onclick="selectOption('cs-tier','Clip',    'Clip — $79')"    role="option" data-value="Clip">
+                    <p class="opt-label">Clip <span class="text-amber-400 font-bold">$79</span></p>
+                    <p class="opt-desc">Up to 4 min · Color correction · Music sync · 2 revisions · 3-day delivery</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Scene' ? 'active' : '' %>" onclick="selectOption('cs-tier','Scene', 'Scene — $189')" role="option" data-value="Scene">
+                    <p class="opt-label">Scene <span class="text-amber-400 font-bold">$189</span> <span class="text-[10px] font-bold tracking-widest uppercase bg-amber-400 text-black px-2 py-0.5 rounded-full ml-1">Popular</span></p>
+                    <p class="opt-desc">Up to 20 min · Full color grade · Sound mix · Basic titles · 3 revisions · 6 days</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Feature' ? 'active' : '' %>" onclick="selectOption('cs-tier','Feature', 'Feature — $399')" role="option" data-value="Feature">
+                    <p class="opt-label">Feature <span class="text-amber-400 font-bold">$399</span></p>
+                    <p class="opt-desc">Unlimited / multi-part · Custom LUT · Sound design · Motion graphics · 4 revisions · 10 days</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Custom' ? 'active' : '' %>" onclick="selectOption('cs-tier','Custom', 'Custom budget')" role="option" data-value="Custom">
+                    <p class="opt-label">Custom <span class="text-gray-400 font-normal text-sm">— name your budget</span></p>
+                    <p class="opt-desc">Tell us what you have in mind and we'll work something out</p>
+                  </div>
+                  <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <p style="font-size:11px;color:#6b7280;line-height:1.5;">* Prices are subject to modification based on requested services, project complexity, and queue availability.</p>
+                  </div>
+                  <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                  </div>
+                </div>
+              </div>
+              <p class="field-error hidden" id="err-tier">Please select a package.</p>
+            </div>
+
+            <!-- Budget input (shown only when Custom is selected) -->
+            <div id="budget-field" class="hidden">
+              <label class="form-label" for="budget">Your budget <span class="text-amber-400">*</span></label>
+              <input class="form-input" type="text" id="budget" name="budget" placeholder="e.g. $80, $200, open to suggestions…" value="<%= locals.formData ? formData.budget : '' %>" />
+              <p class="field-error hidden" id="err-budget">Please enter your budget.</p>
+            </div>
+
+            <!-- Service type — multi-select dropdown -->
+            <div>
+              <label class="form-label">Service <span class="text-amber-400">*</span> <span class="text-gray-400 font-normal">(select all that apply)</span></label>
+              <div id="service-hidden-inputs"></div>
+              <div class="custom-select" id="cs-service">
+                <button type="button" class="custom-select-trigger" id="cs-service-trigger" onclick="toggleDropdown('cs-service')" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="cs-service-label">Select services</span>
+                  <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+                </button>
+                <div class="custom-select-menu" id="cs-service-menu" role="listbox" aria-multiselectable="true">
+                  <div class="custom-select-option" onclick="toggleService('Video Editing')" role="option" data-value="Video Editing">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Video Editing</p><p class="opt-desc">Cuts, transitions, pacing, and timeline assembly</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleService('Color Grading')" role="option" data-value="Color Grading">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Color Grading</p><p class="opt-desc">LUT creation, skin tone correction, cinematic look</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleService('Sound Design')" role="option" data-value="Sound Design">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Sound Design</p><p class="opt-desc">Audio mix, music sync, SFX, noise removal</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleService('Motion Graphics')" role="option" data-value="Motion Graphics">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Motion Graphics</p><p class="opt-desc">Animated titles, overlays, lower thirds, intros</p></div>
+                    </div>
+                  </div>
+                  <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                  </div>
+                </div>
+              </div>
+              <p class="field-error hidden" id="err-service">Please select at least one service.</p>
+            </div>
+
+            <!-- Add-ons — multi-select dropdown -->
+            <div>
+              <label class="form-label">Add-ons <span class="text-gray-400 font-normal">(optional — select all that apply)</span></label>
+              <div id="addon-hidden-inputs"></div>
+              <div class="custom-select" id="cs-addon">
+                <button type="button" class="custom-select-trigger" id="cs-addon-trigger" onclick="toggleDropdown('cs-addon')" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="cs-addon-label">Select add-ons</span>
+                  <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+                </button>
+                <div class="custom-select-menu" id="cs-addon-menu" role="listbox" aria-multiselectable="true">
+                  <div class="custom-select-option" onclick="toggleAddon('Rush delivery')" role="option" data-value="Rush delivery">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Rush delivery <span class="text-amber-400 font-bold text-xs ml-1">+$50</span></p><p class="opt-desc">Shave 2 days off your turnaround</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleAddon('Platform cut')" role="option" data-value="Platform cut">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Platform cut <span class="text-amber-400 font-bold text-xs ml-1">+$30</span></p><p class="opt-desc">Portrait or square crop per variant (for social)</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleAddon('Captions')" role="option" data-value="Captions">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Captions / subtitles <span class="text-amber-400 font-bold text-xs ml-1">+$35</span></p><p class="opt-desc">Burned-in or separate file</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleAddon('Censored preview')" role="option" data-value="Censored preview">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Censored preview <span class="text-amber-400 font-bold text-xs ml-1">+$45</span></p><p class="opt-desc">Blurred version for social promos</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleAddon('Intro/outro bumper')" role="option" data-value="Intro/outro bumper">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Intro / outro bumper <span class="text-amber-400 font-bold text-xs ml-1">+$75</span></p><p class="opt-desc">Custom animated brand bumper (each build)</p></div>
+                    </div>
+                  </div>
+                  <div class="custom-select-option" onclick="toggleAddon('Extra revision')" role="option" data-value="Extra revision">
+                    <div style="display:flex;align-items:flex-start;gap:12px;">
+                      <div class="opt-check" style="margin-top:2px;">
+                        <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <div><p class="opt-label">Extra revision round <span class="text-amber-400 font-bold text-xs ml-1">+$30</span></p><p class="opt-desc">One additional consolidated batch of notes</p></div>
+                    </div>
+                  </div>
+                  <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Coupon -->
+            <div>
+              <label class="form-label">Coupon code <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input type="hidden" id="couponCode" name="couponCode" value="" />
+              <div class="flex gap-2">
+                <input class="form-input" type="text" id="coupon-input" placeholder="e.g. LAUNCH20" autocomplete="off" style="text-transform:uppercase;" />
+                <button type="button" onclick="applyCoupon()"
+                  class="shrink-0 px-5 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+                  Apply
+                </button>
+              </div>
+              <p id="coupon-msg" class="text-xs mt-2 hidden"></p>
+            </div>
+
+            <div>
+              <label class="form-label" for="projectBrief">Project brief <span class="text-amber-400">*</span></label>
+              <textarea class="form-input resize-none" id="projectBrief" name="projectBrief" placeholder="Describe what you need — style, mood, reference clips, delivery format, deadlines, anything relevant…"><%= locals.formData ? formData.projectBrief : '' %></textarea>
+              <p class="field-error hidden" id="err-brief">Please describe your project.</p>
+            </div>
+          </div>
+
+          <div class="mt-8 flex justify-between">
+            <% if (!locals.loggedInUser || !locals.lastBooking) { %>
+            <button type="button" onclick="goToStep(1)"
+              class="px-7 py-3.5 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
+              ← Back
+            </button>
+            <% } else { %><div></div><% } %>
+            <button type="button" onclick="goToStep(3)"
+              class="px-8 py-3.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
+              Continue →
+            </button>
+          </div>
+        </div>
+
+        <!-- ── Step 3: Files & Links ── -->
+        <div class="step-panel" id="step-3">
+          <div class="space-y-6">
+
+            <!-- File upload drop zone -->
+            <div>
+              <label class="form-label">Upload files <span class="text-gray-400 font-normal">(video, audio, photo — max 250 MB each)</span></label>
+              <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+                <input type="file" id="file-input" name="files" multiple accept="video/*,audio/*,image/*,.zip,.rar" />
+                <div id="drop-placeholder">
+                  <svg class="w-10 h-10 text-gray-400 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                  <p class="text-sm text-gray-400 mb-1">Drag & drop files here, or <span class="text-amber-400">click to browse</span></p>
+                  <p class="text-xs text-gray-400">Accepted: video, audio, image, ZIP / RAR — 250 MB per file</p>
+                </div>
+              </div>
+              <div id="file-list" class="mt-3 space-y-2"></div>
+              <p class="field-error hidden" id="err-files"></p>
+            </div>
+
+            <!-- Media links -->
+            <div>
+              <label class="form-label">Media links <span class="text-gray-400 font-normal">(YouTube, Google Drive, Dropbox — optional)</span></label>
+              <div class="flex gap-2">
+                <input class="form-input" type="url" id="link-input" placeholder="https://drive.google.com/…" />
+                <button type="button" onclick="addLink()" class="shrink-0 w-11 h-11 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center text-lg font-light" style="margin-top:1px;">+</button>
+              </div>
+              <p class="field-error hidden mt-1" id="err-link">Please enter a valid URL.</p>
+              <div id="link-tags" class="mt-3 flex flex-wrap gap-2"></div>
+              <div id="link-hidden-inputs"></div>
+            </div>
+
+          </div>
+
+          <div class="mt-8 flex justify-between">
+            <button type="button" onclick="goToStep(2)"
+              class="px-7 py-3.5 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
+              ← Back
+            </button>
+            <button type="submit" id="submit-btn"
+              class="px-8 py-3.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              <span id="submit-label">Submit request</span>
+              <svg id="submit-spinner" class="hidden w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- Price estimate — persists across all steps -->
+      <div id="price-estimate" class="hidden mt-6 rounded-2xl border border-white/8 bg-white/3 px-5 py-4">
+        <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Estimated total</p>
+        <div id="estimate-lines" class="space-y-1.5 mb-3"></div>
+        <div class="border-t border-white/8 pt-3 flex items-baseline justify-between">
+          <span class="text-sm text-gray-400">Total</span>
+          <span id="estimate-total" class="text-xl font-bold text-white"></span>
+        </div>
+        <p class="text-[11px] text-gray-600 mt-2">Final price may vary based on project scope and complexity.</p>
+      </div>
+
+      <% } %>
+
+    </div>
+  </main>
+
+  <script>
+    const isLoggedIn  = <%= (locals.loggedInUser && locals.lastBooking) ? 'true' : 'false' %>;
+    // When logged in, step 2 is visual step 1 and step 3 is visual step 2
+    const VISUAL_STEP = isLoggedIn ? (s) => s - 1 : (s) => s;
+    const TOTAL_DOTS  = isLoggedIn ? 2 : 3;
+    let currentStep   = isLoggedIn ? 2 : 1;
+
+    function goToStep(next) {
+      if (next > currentStep && !validateStep(currentStep)) return;
+
+      document.getElementById(`step-${currentStep}`).classList.remove('active');
+      const vCurrent = VISUAL_STEP(currentStep);
+      if (document.getElementById(`dot-${vCurrent}`))
+        document.getElementById(`dot-${vCurrent}`).className = 'step-dot done';
+
+      currentStep = next;
+      document.getElementById(`step-${currentStep}`).classList.add('active');
+      const vNext = VISUAL_STEP(currentStep);
+      if (document.getElementById(`dot-${vNext}`))
+        document.getElementById(`dot-${vNext}`).className = 'step-dot active';
+
+      // Mark lines done
+      for (let i = 1; i <= TOTAL_DOTS; i++) {
+        const line = document.getElementById(`line-${i}`);
+        if (line) line.className = i < vNext ? 'step-line done' : 'step-line';
+      }
+      // Mark future dots inactive
+      for (let i = vNext + 1; i <= TOTAL_DOTS; i++) {
+        const dot = document.getElementById(`dot-${i}`);
+        if (dot) dot.className = 'step-dot inactive';
+      }
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function validateStep(step) {
+      let ok = true;
+
+      if (step === 1) {
+        const name     = document.getElementById('name');
+        const email    = document.getElementById('email');
+        const location = document.getElementById('location');
+        const emailRe  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        setFieldError('name',     !name.value.trim(),           'err-name');
+        setFieldError('email',    !emailRe.test(email.value),   'err-email');
+        setFieldError('location', !location.value.trim(),       'err-location');
+
+        if (!name.value.trim() || !emailRe.test(email.value) || !location.value.trim()) ok = false;
+      }
+
+      if (step === 2) {
+        const tier    = document.getElementById('pricingTier').value;
+        const brief   = document.getElementById('projectBrief');
+
+        const svcTrigger  = document.getElementById('cs-service-trigger');
+        const tierTrigger = document.getElementById('cs-tier-trigger');
+        const svcErr      = document.getElementById('err-service');
+        const tierErr     = document.getElementById('err-tier');
+
+        if (!selectedServices.length) { svcTrigger.classList.add('error');  svcErr.classList.remove('hidden');  ok = false; }
+        else                          { svcTrigger.classList.remove('error'); svcErr.classList.add('hidden'); }
+        if (!tier)                    { tierTrigger.classList.add('error'); tierErr.classList.remove('hidden'); ok = false; }
+        else                          { tierTrigger.classList.remove('error'); tierErr.classList.add('hidden'); }
+
+        if (tier === 'Custom') {
+          const budget = document.getElementById('budget');
+          setFieldError('budget', !budget.value.trim(), 'err-budget');
+          if (!budget.value.trim()) ok = false;
+        }
+
+        setFieldError('projectBrief', !brief.value.trim(), 'err-brief');
+        if (!brief.value.trim()) ok = false;
+
+        const couponInput  = document.getElementById('coupon-input');
+        const couponHidden = document.getElementById('couponCode');
+        const couponMsg    = document.getElementById('coupon-msg');
+        if (couponInput?.value.trim() && !couponHidden?.value) {
+          couponMsg.className = 'text-xs mt-2 text-amber-400';
+          couponMsg.textContent = 'Click Apply to validate your coupon before continuing.';
+          ok = false;
+        }
+      }
+
+      return ok;
+    }
+
+    function setFieldError(inputId, hasError, errId) {
+      const input = document.getElementById(inputId);
+      const err   = document.getElementById(errId);
+      if (!input || !err) return;
+      if (hasError) {
+        input.classList.add('error');
+        err.classList.remove('hidden');
+      } else {
+        input.classList.remove('error');
+        err.classList.add('hidden');
+      }
+    }
+
+    // ── Drop zone ──
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileList  = document.getElementById('file-list');
+    const MAX_SIZE  = 250 * 1024 * 1024; // 250 MB
+    let selectedFiles = [];
+
+    if (dropZone) {
+      dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        addFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener('change', () => addFiles(fileInput.files));
+    }
+
+    function addFiles(incoming) {
+      const errEl = document.getElementById('err-files');
+      errEl.classList.add('hidden');
+      let tooLarge = [];
+
+      Array.from(incoming).forEach(f => {
+        if (f.size > MAX_SIZE) { tooLarge.push(f.name); return; }
+        if (!selectedFiles.find(x => x.name === f.name && x.size === f.size)) {
+          selectedFiles.push(f);
+        }
+      });
+
+      if (tooLarge.length) {
+        errEl.textContent = `File(s) exceed 250 MB limit: ${tooLarge.join(', ')}`;
+        errEl.classList.remove('hidden');
+      }
+
+      rebuildFileInput();
+      renderFileList();
+    }
+
+    function removeFile(idx) {
+      selectedFiles.splice(idx, 1);
+      rebuildFileInput();
+      renderFileList();
+    }
+
+    function rebuildFileInput() {
+      // Replace the file input's files using a DataTransfer
+      const dt = new DataTransfer();
+      selectedFiles.forEach(f => dt.items.add(f));
+      fileInput.files = dt.files;
+    }
+
+    function renderFileList() {
+      fileList.innerHTML = '';
+      selectedFiles.forEach((f, i) => {
+        const size = f.size < 1024 * 1024
+          ? (f.size / 1024).toFixed(1) + ' KB'
+          : (f.size / 1024 / 1024).toFixed(1) + ' MB';
+        fileList.innerHTML += `
+          <div class="file-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <svg class="w-4 h-4 text-amber-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+              </svg>
+              <span class="text-gray-300 truncate">${f.name}</span>
+            </div>
+            <div class="flex items-center gap-4 flex-shrink-0 ml-4">
+              <span class="text-gray-400 text-xs">${size}</span>
+              <button type="button" onclick="removeFile(${i})" class="text-gray-400 hover:text-red-400 transition-colors text-lg leading-none">×</button>
+            </div>
+          </div>`;
+      });
+    }
+
+    // ── Media link tags ──
+    let mediaLinks = [];
+
+    function addLink() {
+      const input  = document.getElementById('link-input');
+      const errEl  = document.getElementById('err-link');
+      const url    = input.value.trim();
+
+      try { new URL(url); } catch {
+        errEl.classList.remove('hidden');
+        return;
+      }
+      errEl.classList.add('hidden');
+
+      if (mediaLinks.includes(url)) { input.value = ''; return; }
+      mediaLinks.push(url);
+      input.value = '';
+      renderLinkTags();
+    }
+
+    function removeLink(idx) {
+      mediaLinks.splice(idx, 1);
+      renderLinkTags();
+    }
+
+    function renderLinkTags() {
+      const tags    = document.getElementById('link-tags');
+      const hidden  = document.getElementById('link-hidden-inputs');
+      tags.innerHTML   = '';
+      hidden.innerHTML = '';
+
+      mediaLinks.forEach((url, i) => {
+        // Display label: strip protocol for readability
+        const label = url.replace(/^https?:\/\//, '');
+
+        tags.innerHTML += `
+          <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:7px 12px;max-width:100%;">
+            <a href="${url}" target="_blank" rel="noopener" style="font-size:13px;color:#f59e0b;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:300px;" title="${url}">${label}</a>
+            <button type="button" onclick="removeLink(${i})" style="color:#6b7280;font-size:16px;line-height:1;background:none;border:none;cursor:pointer;flex-shrink:0;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#6b7280'">×</button>
+          </div>`;
+
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'mediaLinks'; inp.value = url;
+        hidden.appendChild(inp);
+      });
+    }
+
+    // Allow pressing Enter in the link input to add
+    document.getElementById('link-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addLink(); }
+    });
+
+    // ── Custom dropdowns ──
+    let selectedServices = [];
+    let selectedAddons   = [];
+
+    function toggleDropdown(id) {
+      const trigger = document.getElementById(`${id}-trigger`);
+      const menu    = document.getElementById(`${id}-menu`);
+      const isOpen  = menu.classList.contains('open');
+
+      // Close all other dropdowns first
+      closeAllDropdowns();
+
+      if (!isOpen) {
+        menu.classList.add('open');
+        trigger.classList.add('open');
+        trigger.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    function closeAllDropdowns() {
+      document.querySelectorAll('.custom-select-menu.open').forEach(m => {
+        m.classList.remove('open');
+        m.previousElementSibling.classList.remove('open');
+        m.previousElementSibling.setAttribute('aria-expanded', 'false');
+      });
+    }
+
+    // Multi-select: service toggle
+    function toggleService(value) {
+      const idx = selectedServices.indexOf(value);
+      if (idx === -1) selectedServices.push(value);
+      else            selectedServices.splice(idx, 1);
+
+      // Update option visual state
+      document.querySelectorAll('#cs-service-menu .custom-select-option').forEach(opt => {
+        opt.classList.toggle('active', selectedServices.includes(opt.dataset.value));
+      });
+
+      // Update trigger label
+      const label    = document.getElementById('cs-service-label');
+      const trigger  = document.getElementById('cs-service-trigger');
+      if (selectedServices.length === 0) {
+        label.textContent = 'Select services';
+        trigger.classList.remove('selected');
+      } else {
+        label.textContent = selectedServices.join(', ');
+        trigger.classList.add('selected');
+        trigger.classList.remove('error');
+        document.getElementById('err-service').classList.add('hidden');
+      }
+
+      // Sync hidden inputs
+      const container = document.getElementById('service-hidden-inputs');
+      container.innerHTML = '';
+      selectedServices.forEach(s => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'serviceType'; inp.value = s;
+        container.appendChild(inp);
+      });
+    }
+
+    // Multi-select: add-ons
+    function toggleAddon(value) {
+      const idx = selectedAddons.indexOf(value);
+      if (idx === -1) selectedAddons.push(value);
+      else            selectedAddons.splice(idx, 1);
+
+      document.querySelectorAll('#cs-addon-menu .custom-select-option').forEach(opt => {
+        opt.classList.toggle('active', selectedAddons.includes(opt.dataset.value));
+      });
+
+      const label   = document.getElementById('cs-addon-label');
+      const trigger = document.getElementById('cs-addon-trigger');
+      if (selectedAddons.length === 0) {
+        label.textContent = 'Select add-ons';
+        trigger.classList.remove('selected');
+      } else {
+        label.textContent = selectedAddons.join(', ');
+        trigger.classList.add('selected');
+      }
+
+      const container = document.getElementById('addon-hidden-inputs');
+      container.innerHTML = '';
+      selectedAddons.forEach(a => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'addOns'; inp.value = a;
+        container.appendChild(inp);
+      });
+
+      updateEstimate();
+    }
+
+    // ── Price estimate ──
+    const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
+    const ADDON_PRICES = {
+      'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35,
+      'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30,
+    };
+
+    let appliedCoupon = null; // { discountType, discountValue }
+
+    function updateEstimate() {
+      const tier  = document.getElementById('pricingTier').value;
+      const box   = document.getElementById('price-estimate');
+      const lines = document.getElementById('estimate-lines');
+      const total = document.getElementById('estimate-total');
+
+      if (!tier || tier === 'Custom') { box.classList.add('hidden'); return; }
+
+      const base     = TIER_PRICES[tier] ?? 0;
+      const addons   = selectedAddons.filter(a => ADDON_PRICES[a] !== undefined);
+      const addonSum = addons.reduce((s, a) => s + ADDON_PRICES[a], 0);
+      const subtotal = base + addonSum;
+
+      let discount = 0;
+      if (appliedCoupon) {
+        discount = appliedCoupon.discountType === 'percent'
+          ? Math.round(subtotal * appliedCoupon.discountValue) / 100
+          : Math.min(appliedCoupon.discountValue, subtotal);
+      }
+
+      lines.innerHTML = `<div class="flex justify-between text-sm"><span class="text-gray-300">${tier} package</span><span class="text-white">$${base}</span></div>`;
+      addons.forEach(a => {
+        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-gray-400">${a}</span><span class="text-amber-400">+$${ADDON_PRICES[a]}</span></div>`;
+      });
+      if (discount > 0) {
+        const label = appliedCoupon.discountType === 'percent'
+          ? `${appliedCoupon.discountValue}% off`
+          : `$${appliedCoupon.discountValue} off`;
+        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">Coupon (${label})</span><span class="text-green-400">−$${discount.toFixed(2)}</span></div>`;
+      }
+
+      total.textContent = `$${Math.max(0, subtotal - discount).toFixed(2)}`;
+      box.classList.remove('hidden');
+    }
+
+    // ── Coupon apply ──
+    async function applyCoupon() {
+      const input  = document.getElementById('coupon-input');
+      const msg    = document.getElementById('coupon-msg');
+      const hidden = document.getElementById('couponCode');
+      const code   = input.value.trim().toUpperCase();
+
+      if (!code) return;
+
+      msg.className = 'text-xs mt-2 text-gray-400';
+      msg.textContent = 'Checking…';
+      msg.classList.remove('hidden');
+
+      try {
+        const res  = await fetch('/hire/coupon/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code }),
+        });
+        const data = await res.json();
+
+        if (data.valid) {
+          appliedCoupon = { discountType: data.discountType, discountValue: data.discountValue };
+          hidden.value = code;
+          msg.className = 'text-xs mt-2 text-green-400';
+          msg.textContent = '✓ ' + data.message;
+          input.disabled = true;
+          updateEstimate();
+        } else {
+          appliedCoupon = null;
+          hidden.value = '';
+          msg.className = 'text-xs mt-2 text-red-400';
+          msg.textContent = data.message;
+          updateEstimate();
+        }
+      } catch {
+        msg.className = 'text-xs mt-2 text-red-400';
+        msg.textContent = 'Could not validate code. Please try again.';
+      }
+    }
+
+    document.getElementById('coupon-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); }
+    });
+
+    // Single-select: tier
+    function selectOption(id, value, label) {
+      document.getElementById('pricingTier').value = value;
+
+      document.getElementById(`${id}-label`).textContent = label;
+      const trigger = document.getElementById(`${id}-trigger`);
+      trigger.classList.add('selected');
+      trigger.classList.remove('error');
+
+      document.querySelectorAll(`#${id}-menu .custom-select-option`).forEach(o => o.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.getElementById(`${id}-menu`).classList.remove('open');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+
+      document.getElementById('err-tier').classList.add('hidden');
+
+      // Show budget field only for Custom
+      const budgetField = document.getElementById('budget-field');
+      if (value === 'Custom') budgetField.classList.remove('hidden');
+      else                    budgetField.classList.add('hidden');
+
+      updateEstimate();
+    }
+
+    // Close dropdowns on outside click
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.custom-select')) closeAllDropdowns();
+    });
+
+    // ── Restore service/addon selections from server formData on error re-render ──
+    <% if (locals.formData) {
+      const fmServices = [].concat(locals.formData.serviceType || []).filter(Boolean);
+      const fmAddons   = [].concat(locals.formData.addOns     || []).filter(Boolean);
+    %>
+    <% if (fmServices.length) { %>[<%= fmServices.map(s => JSON.stringify(s)).join(',') %>].forEach(s => toggleService(s));<% } %>
+    <% if (fmAddons.length)   { %>[<%= fmAddons.map(a => JSON.stringify(a)).join(',') %>].forEach(a => toggleAddon(a));<% } %>
+    <% } %>
+
+    // ── Password show/hide ──
+    function togglePassword(btn) {
+      const input = btn.previousElementSibling;
+      const showing = input.type === 'text';
+      input.type = showing ? 'password' : 'text';
+      btn.querySelector('.eye-show').style.display = showing ? '' : 'none';
+      btn.querySelector('.eye-hide').style.display = showing ? 'none' : '';
+      btn.style.color = showing ? '#6b7280' : '#f59e0b';
+    }
+
+    // ── Prefill tier from ?tier= query param ──
+    (function () {
+      const TIER_LABELS = { Clip: 'Clip — $79', Scene: 'Scene — $189', Feature: 'Feature — $399', Custom: 'Custom budget' };
+      const param = new URLSearchParams(window.location.search).get('tier');
+      if (!param || !TIER_LABELS[param]) return;
+      document.getElementById('pricingTier').value = param;
+      document.getElementById('cs-tier-label').textContent = TIER_LABELS[param];
+      const trigger = document.getElementById('cs-tier-trigger');
+      trigger.classList.add('selected');
+      const match = document.querySelector(`#cs-tier-menu [data-value="${param}"]`);
+      if (match) match.classList.add('active');
+      if (param === 'Custom') document.getElementById('budget-field').classList.remove('hidden');
+    })();
+
+    // ── Submit loading state ──
+    const form = document.getElementById('booking-form');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        const errEl = document.getElementById('err-files');
+        const hasVideo = selectedFiles.some(f => f.type.startsWith('video/'));
+        if (!hasVideo) {
+          e.preventDefault();
+          errEl.textContent = 'Please upload at least one video file before submitting.';
+          errEl.classList.remove('hidden');
+          return;
+        }
+        errEl.classList.add('hidden');
+        const btn     = document.getElementById('submit-btn');
+        const label   = document.getElementById('submit-label');
+        const spinner = document.getElementById('submit-spinner');
+        btn.disabled = true;
+        label.textContent = 'Submitting…';
+        spinner.classList.remove('hidden');
+      });
+    }
+  </script>
+
+  <%- include('_toast') %>
+</body>
+</html>

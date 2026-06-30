@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dashboard | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    .status-badge {
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 3px 10px; border-radius: 999px;
+    }
+    .status-pending   { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+    .status-in-review { background: rgba(99,102,241,0.12);  color: #818cf8; border: 1px solid rgba(99,102,241,0.25); }
+    .status-accepted  { background: rgba(34,197,94,0.12);   color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+    .status-declined  { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+    .row-link { transition: background 0.15s ease; }
+    .row-link:hover { background: rgba(255,255,255,0.03); }
+    .row-link.selected { background: rgba(255,255,255,0.04); }
+    .row-cb { width: 40px; padding: 0 0 0 16px; }
+    .cb-icon { color: #4b5563; cursor: pointer; transition: color 0.15s; flex-shrink: 0; }
+    .cb-icon:hover { color: #9ca3af; }
+    .cb-icon.checked { color: #f59e0b; }
+    #bulk-bar {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      display: none; align-items: center; gap: 12px;
+      background: #1a1a1a; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px; padding: 10px 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 50; white-space: nowrap;
+    }
+    #bulk-bar.visible { display: flex; }
+    .thumb-cell { width: 108px; padding: 8px 8px 8px 16px; }
+    .thumb-wrap {
+      width: 96px; height: 54px; border-radius: 6px; overflow: hidden;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .project-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .thumb-placeholder { color: #374151; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-350 mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="brand text-lg font-bold tracking-tight">
+        <span class="text-white">Jarumiri</span> Studios<span class="text-amber-400">.</span>
+        <span class="text-gray-600 font-normal text-sm ml-2">/ admin</span>
+      </a>
+      <div class="flex items-center gap-6">
+        <div class="flex items-center gap-3 text-sm text-gray-500">
+          <span><%= pending %> pending</span>
+        </div>
+        <a href="/admin/coupons" class="text-sm text-gray-500 hover:text-white transition-colors">Coupons</a>
+        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-350 mx-auto px-6 py-10">
+
+    <!-- Title + filters -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white">Booking requests</h1>
+        <p class="text-gray-500 text-sm mt-1"><span id="result-count"><%= total %></span> total</p>
+      </div>
+      <div class="flex gap-2 flex-wrap" id="filter-bar">
+        <button type="button" onclick="toggleFilter('all')"
+          class="filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
+          data-value="all">
+          All
+        </button>
+        <% ['pending','in-review','accepted','declined'].forEach(s => { %>
+        <button type="button" onclick="toggleFilter('<%= s %>')"
+          class="filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors"
+          data-value="<%= s %>">
+          <%= s.charAt(0).toUpperCase() + s.slice(1) %>
+        </button>
+        <% }) %>
+      </div>
+    </div>
+
+    <!-- Search bar -->
+    <div class="flex gap-2 mb-8">
+      <!-- Custom field dropdown -->
+      <div class="relative flex-shrink-0" id="field-dropdown">
+        <button type="button" id="field-btn" onclick="toggleDropdown()"
+          class="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-gray-300 hover:border-white/20 hover:text-white transition-colors whitespace-nowrap">
+          <span id="field-label">All fields</span>
+          <svg id="field-chevron" class="w-3.5 h-3.5 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div id="field-menu"
+          class="hidden absolute left-0 top-full mt-1.5 z-50 min-w-[160px] bg-[#111] border border-white/10 rounded-xl overflow-hidden shadow-xl">
+          <% [
+            { value: 'all',     label: 'All fields'  },
+            { value: 'crCode',  label: 'BR Code'     },
+            { value: 'name',    label: 'Client name' },
+            { value: 'email',   label: 'Email'       },
+            { value: 'location',label: 'Location'    },
+            { value: 'services',label: 'Services'    },
+            { value: 'package', label: 'Package'     },
+            { value: 'status',  label: 'Status'      },
+          ].forEach(opt => { %>
+          <button type="button"
+            class="field-option w-full text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors"
+            data-value="<%= opt.value %>" data-label="<%= opt.label %>"
+            onclick="selectField(this)">
+            <%= opt.label %>
+          </button>
+          <% }) %>
+        </div>
+        <input type="hidden" id="search-field" value="all" />
+      </div>
+
+      <div class="relative flex-1">
+        <svg class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11A6 6 0 111 11a6 6 0 0116 0z"/></svg>
+        <input id="search-input" type="text" placeholder="Search requests…"
+          oninput="applySearch()"
+          class="w-full bg-white/[0.04] border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-amber-400/50 transition-colors" />
+      </div>
+    </div>
+
+    <!-- Bulk action bar -->
+    <form id="bulk-form" action="/admin/bookings/bulk-delete" method="POST">
+      <div id="bulk-bar">
+        <span id="bulk-count" class="text-sm text-gray-400"></span>
+        <button type="submit" onclick="return confirmBulkDelete()"
+          class="flex items-center gap-1.5 text-sm font-semibold text-red-400 hover:text-red-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-red-500/10">
+          <iconify-icon icon="material-symbols-light:delete" width="20" height="20"></iconify-icon>
+          Delete selected
+        </button>
+        <div style="width:1px;height:20px;background:rgba(255,255,255,0.08);"></div>
+        <button type="button" onclick="adminClearSelection()" title="Clear selection"
+          style="display:inline-flex;align-items:center;padding:6px;border-radius:8px;border:none;background:transparent;color:#6b7280;cursor:pointer;transition:color 0.15s;"
+          onmouseover="this.style.color='#9ca3af'" onmouseout="this.style.color='#6b7280'">
+          <iconify-icon icon="material-symbols-light:close" width="20" height="20"></iconify-icon>
+        </button>
+      </div>
+      <div id="hidden-ids"></div>
+    </form>
+
+    <!-- Table -->
+    <% if (bookings.length === 0) { %>
+    <div class="text-center py-24 text-gray-600">
+      <p class="text-4xl mb-4">📭</p>
+      <p class="text-lg font-medium text-gray-500">No requests yet</p>
+      <p class="text-sm mt-1">Booking submissions will appear here.</p>
+    </div>
+    <% } else { %>
+    <div class="rounded-2xl border border-white/8 overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-white/5 text-left">
+            <th class="row-cb">
+              <iconify-icon id="select-all-cb" icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleSelectAll()"></iconify-icon>
+            </th>
+            <th class="thumb-cell"></th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">BR Code</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Client</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Location</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Services</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Package</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden lg:table-cell">Est. Cost</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="px-5 py-3.5 text-xs font-semibold text-gray-500 uppercase tracking-wider hidden sm:table-cell">Date</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-white/5">
+          <% bookings.forEach(b => { %>
+          <tr class="row-link"
+            data-id="<%= b._id %>"
+            data-status="<%= b.status %>"
+            data-crcode="<%= b.crCode.toLowerCase() %>"
+            data-name="<%= b.name.toLowerCase() %>"
+            data-email="<%= b.email.toLowerCase() %>"
+            data-location="<%= b.location.toLowerCase() %>"
+            data-services="<%= b.serviceType.join(', ').toLowerCase() %>"
+            data-package="<%= b.pricingTier.toLowerCase() %>"
+            onclick="rowClick(event, '<%= b._id %>', '/admin/booking/<%= b._id %>')" style="cursor:pointer;">
+            <td class="row-cb" onclick="event.stopPropagation()">
+              <iconify-icon icon="material-symbols-light:check-box-outline-blank" width="20" height="20" class="cb-icon" onclick="toggleRow(this, '<%= b._id %>')"></iconify-icon>
+            </td>
+            <td class="thumb-cell">
+              <% const _vf = b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('video/')); %>
+              <% const _if = !_vf && b.uploadedFiles && b.uploadedFiles.find(f => f.mimetype && f.mimetype.startsWith('image/')); %>
+              <div class="thumb-wrap">
+                <% if (_vf) { %>
+                  <video src="/admin/uploads/<%= _vf.storedName %>" class="project-thumb" muted preload="metadata"></video>
+                <% } else if (_if) { %>
+                  <img src="/admin/uploads/<%= _if.storedName %>" class="project-thumb" alt="" />
+                <% } else { %>
+                  <iconify-icon icon="material-symbols-light:movie" width="20" height="20" class="thumb-placeholder"></iconify-icon>
+                <% } %>
+              </div>
+            </td>
+            <td class="px-5 py-4 font-mono text-amber-400 font-semibold text-xs whitespace-nowrap"><%= b.crCode %></td>
+            <td class="px-5 py-4">
+              <p class="text-white font-medium"><%= b.name %></p>
+              <p class="text-gray-500 text-xs mt-0.5"><%= b.email %></p>
+            </td>
+            <td class="px-5 py-4 hidden lg:table-cell text-gray-400 whitespace-nowrap"><%= b.location %></td>
+            <td class="px-5 py-4 hidden md:table-cell text-gray-300 whitespace-nowrap"><%= b.serviceType.join(', ') %></td>
+            <td class="px-5 py-4 hidden lg:table-cell text-gray-400">
+              <% if (b.pricingTier === 'Custom' && b.budget) { %>
+                <span class="text-amber-400 font-semibold"><%= b.budget %></span>
+                <span class="text-gray-600 text-xs ml-1">Custom</span>
+              <% } else { %>
+                <%= b.pricingTier %>
+              <% } %>
+            </td>
+            <td class="px-5 py-4 hidden lg:table-cell font-variant-numeric tabular-nums text-sm">
+              <%
+                const _est = b.agreedPrice
+                  ? b.agreedPrice
+                  : (TIER_PRICES[b.pricingTier] || 0) + (b.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (b.discountAmount || 0);
+                const _confirmed = !!b.agreedPrice;
+              %>
+              <% if (_est > 0) { %>
+                <span class="<%= _confirmed ? 'text-white' : 'text-gray-500' %>">
+                  <%= _confirmed ? '' : '~' %>$<%= _est.toFixed(2) %>
+                </span>
+              <% } else { %>
+                <span class="text-gray-600">—</span>
+              <% } %>
+            </td>
+            <td class="px-5 py-4">
+              <span class="status-badge status-<%= b.status %>"><%= b.status %></span>
+            </td>
+            <td class="px-5 py-4 hidden sm:table-cell text-gray-500 text-xs whitespace-nowrap">
+              <%= new Date(b.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %>
+            </td>
+          </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <% } %>
+
+  </main>
+
+  <script>
+    const selected = new Set(['all']);
+
+    function applyStyles() {
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        const active = selected.has(btn.dataset.value);
+        btn.className = 'filter-btn text-xs font-semibold px-4 py-2 rounded-full border transition-colors '
+          + (active
+            ? 'bg-amber-400 text-black border-amber-400'
+            : 'border-white/10 text-gray-400 hover:border-white/25 hover:text-white');
+      });
+    }
+
+    function applyFilter() {
+      applySearch();
+    }
+
+    function applySearch() {
+      const query = (document.getElementById('search-input')?.value || '').toLowerCase().trim();
+      const field = document.getElementById('search-field')?.value || 'all';
+      const rows = document.querySelectorAll('tbody tr[data-status]');
+      const showAllStatus = selected.has('all');
+      let visible = 0;
+
+      rows.forEach(row => {
+        const statusMatch = showAllStatus || selected.has(row.dataset.status);
+
+        let searchMatch = true;
+        if (query) {
+          if (field === 'all') {
+            searchMatch = ['crcode','name','email','location','services','package','status'].some(
+              k => (row.dataset[k] || '').includes(query)
+            );
+          } else {
+            const key = field === 'crCode' ? 'crcode' : field;
+            searchMatch = (row.dataset[key] || '').includes(query);
+          }
+        }
+
+        const show = statusMatch && searchMatch;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+
+      const countEl = document.getElementById('result-count');
+      if (countEl) countEl.textContent = visible;
+    }
+
+    function toggleFilter(val) {
+      if (val === 'all') {
+        selected.clear();
+        selected.add('all');
+      } else {
+        selected.delete('all');
+        selected.has(val) ? selected.delete(val) : selected.add(val);
+        if (selected.size === 0) selected.add('all');
+      }
+      applyStyles();
+      applySearch();
+    }
+
+    applyStyles();
+    applySearch();
+
+    document.querySelectorAll('video.project-thumb').forEach(v => {
+      v.addEventListener('loadedmetadata', () => { v.currentTime = 0.001; });
+    });
+
+    // ── Bulk selection ──
+    const checkedIds = new Set();
+
+    function updateBulkBar() {
+      const bar = document.getElementById('bulk-bar');
+      const countEl = document.getElementById('bulk-count');
+      const hiddenIds = document.getElementById('hidden-ids');
+      const n = checkedIds.size;
+      bar.classList.toggle('visible', n > 0);
+      countEl.textContent = n + ' selected';
+      hiddenIds.innerHTML = [...checkedIds].map(id =>
+        `<input type="hidden" name="ids" value="${id}">`
+      ).join('');
+      // sync select-all icon
+      const allVisible = [...document.querySelectorAll('tbody tr[data-id]')]
+        .filter(r => r.style.display !== 'none');
+      const allChecked = allVisible.length > 0 && allVisible.every(r => checkedIds.has(r.dataset.id));
+      const saIcon = document.getElementById('select-all-cb');
+      if (saIcon) {
+        saIcon.setAttribute('icon', allChecked
+          ? 'material-symbols-light:check-box'
+          : 'material-symbols-light:check-box-outline-blank');
+        saIcon.classList.toggle('checked', allChecked);
+      }
+    }
+
+    function toggleRow(icon, id) {
+      const row = icon.closest('tr');
+      if (checkedIds.has(id)) {
+        checkedIds.delete(id);
+        icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank');
+        icon.classList.remove('checked');
+        row.classList.remove('selected');
+      } else {
+        checkedIds.add(id);
+        icon.setAttribute('icon', 'material-symbols-light:check-box');
+        icon.classList.add('checked');
+        row.classList.add('selected');
+      }
+      updateBulkBar();
+    }
+
+    function toggleSelectAll() {
+      const allVisible = [...document.querySelectorAll('tbody tr[data-id]')]
+        .filter(r => r.style.display !== 'none');
+      const allChecked = allVisible.every(r => checkedIds.has(r.dataset.id));
+      allVisible.forEach(row => {
+        const icon = row.querySelector('.cb-icon');
+        const id = row.dataset.id;
+        if (allChecked) {
+          checkedIds.delete(id);
+          icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank');
+          icon.classList.remove('checked');
+          row.classList.remove('selected');
+        } else {
+          checkedIds.add(id);
+          icon.setAttribute('icon', 'material-symbols-light:check-box');
+          icon.classList.add('checked');
+          row.classList.add('selected');
+        }
+      });
+      updateBulkBar();
+    }
+
+    function rowClick(e, id, url) {
+      // if click originated from the checkbox cell, ignore navigation
+      if (e.target.closest('.row-cb')) return;
+      window.location = url;
+    }
+
+    function confirmBulkDelete() {
+      return confirm(`Delete ${checkedIds.size} project(s)? This cannot be undone.`);
+    }
+
+    function adminClearSelection() {
+      [...checkedIds].forEach(id => {
+        const row = document.querySelector(`tbody tr[data-id="${id}"]`);
+        if (row) {
+          row.classList.remove('selected');
+          const icon = row.querySelector('.cb-icon');
+          if (icon) { icon.setAttribute('icon', 'material-symbols-light:check-box-outline-blank'); icon.classList.remove('checked'); }
+        }
+      });
+      checkedIds.clear();
+      updateBulkBar();
+    }
+
+    function toggleDropdown() {
+      const menu = document.getElementById('field-menu');
+      const chevron = document.getElementById('field-chevron');
+      const open = !menu.classList.contains('hidden');
+      menu.classList.toggle('hidden', open);
+      chevron.style.transform = open ? '' : 'rotate(180deg)';
+    }
+
+    function selectField(btn) {
+      document.getElementById('search-field').value = btn.dataset.value;
+      document.getElementById('field-label').textContent = btn.dataset.label;
+      document.querySelectorAll('.field-option').forEach(b => {
+        b.classList.toggle('text-white', b === btn);
+        b.classList.toggle('text-gray-400', b !== btn);
+      });
+      document.getElementById('field-menu').classList.add('hidden');
+      document.getElementById('field-chevron').style.transform = '';
+      applySearch();
+    }
+
+    document.addEventListener('click', e => {
+      if (!document.getElementById('field-dropdown').contains(e.target)) {
+        document.getElementById('field-menu').classList.add('hidden');
+        document.getElementById('field-chevron').style.transform = '';
+      }
+    });
+  </script>
+
+</body>
+</html>

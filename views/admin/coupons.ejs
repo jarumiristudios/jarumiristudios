@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Coupons | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+    .form-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus { border-color: rgba(245,158,11,0.5); }
+    .form-input::placeholder { color: #4b5563; }
+    select.form-input option { background: #111; }
+    .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
+    .custom-select { position: relative; }
+    .custom-select-trigger {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #9ca3af;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      text-align: left; outline: none;
+    }
+    .custom-select-trigger.selected { color: #fff; }
+    .custom-select-trigger.open, .custom-select-trigger:focus {
+      border-color: rgba(245,158,11,0.5);
+      box-shadow: 0 0 0 3px rgba(245,158,11,0.08);
+    }
+    .custom-select-chevron { flex-shrink: 0; width: 15px; height: 15px; color: #6b7280; transition: transform 0.2s; }
+    .custom-select-trigger.open .custom-select-chevron { transform: rotate(180deg); }
+    .custom-select-menu {
+      display: none; position: absolute;
+      top: calc(100% + 5px); left: 0; right: 0;
+      background: #111; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px; overflow: hidden; z-index: 50;
+      box-shadow: 0 16px 32px rgba(0,0,0,0.5);
+    }
+    .custom-select-menu.open { display: block; }
+    .cs-option {
+      padding: 10px 14px; cursor: pointer;
+      font-size: 13px; color: #d1d5db;
+      transition: background 0.15s;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .cs-option:last-child { border-bottom: none; }
+    .cs-option:hover { background: rgba(245,158,11,0.08); }
+    .cs-option.active { background: rgba(245,158,11,0.12); color: #fff; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="text-white font-semibold text-sm">Coupons</span>
+      </div>
+      <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-6 py-10 space-y-8">
+
+    <!-- Create coupon -->
+    <div class="card">
+      <h2 class="text-base font-semibold text-white mb-5">Create coupon</h2>
+      <form action="/admin/coupons" method="POST">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <p class="detail-label mb-1">Code</p>
+            <input type="text" name="code" required placeholder="e.g. LAUNCH20" class="form-input uppercase" />
+          </div>
+          <div>
+            <p class="detail-label mb-1">Discount type</p>
+            <input type="hidden" id="discountType" name="discountType" value="percent" />
+            <div class="custom-select" id="cs-dtype">
+              <button type="button" class="custom-select-trigger selected" id="cs-dtype-trigger"
+                onclick="toggleDtype()" aria-haspopup="listbox" aria-expanded="false">
+                <span id="cs-dtype-label">Percentage (%)</span>
+                <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+              </button>
+              <div class="custom-select-menu" id="cs-dtype-menu" role="listbox">
+                <div class="cs-option active" onclick="selectDtype('percent','Percentage (%)')" role="option">Percentage (%)</div>
+                <div class="cs-option"        onclick="selectDtype('fixed','Fixed amount ($)')"  role="option">Fixed amount ($)</div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <p class="detail-label mb-1">Discount value</p>
+            <input type="number" name="discountValue" required min="1" step="0.01" placeholder="e.g. 20" class="form-input" />
+          </div>
+          <div>
+            <p class="detail-label mb-1">Expires at</p>
+            <input type="date" name="expiresAt" id="expiresAt" class="form-input disabled:opacity-40 disabled:cursor-not-allowed" />
+            <label class="flex items-center gap-2 mt-2 cursor-pointer w-fit">
+              <input type="checkbox" id="no-expiry" onchange="toggleExpiry(this)"
+                class="w-4 h-4 rounded accent-amber-400" />
+              <span class="text-xs text-gray-400">No expiry</span>
+            </label>
+          </div>
+        </div>
+        <button type="submit"
+          class="px-6 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-black text-sm font-semibold transition-colors">
+          Create coupon
+        </button>
+      </form>
+    </div>
+
+    <!-- Coupon list -->
+    <div>
+      <h2 class="text-base font-semibold text-white mb-4">All coupons <span class="text-gray-600 font-normal text-sm"><%= coupons.length %></span></h2>
+
+      <% if (coupons.length === 0) { %>
+      <div class="card text-center py-10">
+        <p class="text-gray-500 text-sm">No coupons yet. Create one above.</p>
+      </div>
+      <% } else { %>
+      <div class="space-y-3">
+        <% coupons.forEach(c => {
+          const expired = c.expiresAt && new Date() > new Date(c.expiresAt);
+          const statusLabel = !c.active ? 'Disabled' : expired ? 'Expired' : 'Active';
+          const statusColor = !c.active ? 'text-gray-500' : expired ? 'text-red-400' : 'text-green-400';
+        %>
+        <div class="card py-4! flex items-center justify-between gap-4 flex-wrap">
+          <div class="flex items-center gap-5 flex-wrap">
+            <span class="font-mono font-bold text-amber-400 text-sm tracking-widest"><%= c.code %></span>
+            <span class="text-white font-semibold text-sm">
+              <% if (c.discountType === 'percent') { %>
+                <%= c.discountValue %>% off
+              <% } else { %>
+                $<%= c.discountValue %> off
+              <% } %>
+            </span>
+            <span class="text-gray-500 text-xs">
+              <% if (c.expiresAt) { %>Expires <%= new Date(c.expiresAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %><% } else { %>No expiry<% } %>
+            </span>
+            <span class="text-xs font-semibold <%= statusColor %>"><%= statusLabel %></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <form action="/admin/coupons/<%= c._id %>/toggle" method="POST">
+              <button type="submit"
+                class="text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors <%= c.active ? 'border-white/10 hover:border-white/30' : 'border-amber-400/30 hover:border-amber-400/60' %>"
+                style="color: <%= c.active ? '#9ca3af' : '#fbbf24' %>">
+                <%= c.active ? 'Disable' : 'Enable' %>
+              </button>
+            </form>
+            <form action="/admin/coupons/<%= c._id %>/delete" method="POST">
+              <button type="submit"
+                class="text-xs font-semibold px-4 py-1.5 rounded-full border border-red-500/20 text-red-400 hover:border-red-500/50 transition-colors">
+                Delete
+              </button>
+            </form>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+
+  </main>
+
+  <script>
+    function toggleDtype() {
+      const menu    = document.getElementById('cs-dtype-menu');
+      const trigger = document.getElementById('cs-dtype-trigger');
+      const isOpen  = menu.classList.contains('open');
+      menu.classList.toggle('open', !isOpen);
+      trigger.classList.toggle('open', !isOpen);
+      trigger.setAttribute('aria-expanded', String(!isOpen));
+    }
+
+    function selectDtype(value, label) {
+      document.getElementById('discountType').value = value;
+      document.getElementById('cs-dtype-label').textContent = label;
+      document.querySelectorAll('#cs-dtype-menu .cs-option').forEach(o =>
+        o.classList.toggle('active', o.textContent.trim() === label)
+      );
+      document.getElementById('cs-dtype-menu').classList.remove('open');
+      const trigger = document.getElementById('cs-dtype-trigger');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function toggleExpiry(checkbox) {
+      const input = document.getElementById('expiresAt');
+      input.disabled = checkbox.checked;
+      if (checkbox.checked) input.value = '';
+    }
+
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#cs-dtype')) {
+        document.getElementById('cs-dtype-menu')?.classList.remove('open');
+        const t = document.getElementById('cs-dtype-trigger');
+        t?.classList.remove('open');
+        t?.setAttribute('aria-expanded', 'false');
+      }
+    });
+  </script>
+</body>
+</html>

@@ -3,12 +3,579 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Jarumiri Studio</title>
+  <title>Jarumiri Studios | Adult Content Editing Done Right</title>
+  <meta name="description" content="Delivering precision video editing and photo retouching for adult content creators on OnlyFans, Fansly, and more. Book your project today." />
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:title"       content="Jarumiri Studios | Adult Content Editing Done Right" />
+  <meta property="og:description" content="Delivering precision video editing and photo retouching for adult content creators on OnlyFans, Fansly, and more. Book your project today." />
+  <meta property="og:url"         content="https://jarumiri.studio" />
+
+  <!-- Twitter/X Card -->
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:title"       content="Jarumiri Studios | Adult Content Editing Done Right" />
+  <meta name="twitter:description" content="Delivering precision video editing and photo retouching for adult content creators on OnlyFans, Fansly, and more. Book your project today." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
   <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-bg {
+      background: radial-gradient(ellipse at 60% 0%, rgba(245,158,11,0.12) 0%, transparent 60%),
+                  radial-gradient(ellipse at 0% 80%, rgba(239,68,68,0.08) 0%, transparent 50%),
+                  #080808;
+    }
+    .card-hover {
+      transition: transform 0.25s ease, box-shadow 0.25s ease;
+    }
+    .card-hover:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(245,158,11,0.12);
+    }
+    .nav-link {
+      position: relative;
+    }
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 0;
+      width: 0; height: 1px;
+      background: #f59e0b;
+      transition: width 0.25s ease;
+    }
+    .nav-link:hover::after { width: 100%; }
+    html { scroll-behavior: smooth; }
+  </style>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ProfessionalService",
+    "name": "Jarumiri Studios",
+    "description": "Delivering precision video editing and photo retouching for adult content creators on OnlyFans, Fansly, and more.",
+    "url": "https://jarumiri.studio",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "contactType": "customer support",
+      "url": "https://t.me/jarumiri"
+    },
+    "serviceType": ["Video Editing", "Photo Retouching", "Color Grading", "Motion Graphics"]
+  }
+  </script>
 </head>
-<body class="bg-gray-100 text-gray-900">
-  <div class="flex items-center justify-center min-h-screen">
-    <h1 class="text-4xl font-bold">Jarumiri Studio</h1>
-  </div>
+<body class="bg-[#080808] text-gray-100 antialiased">
+
+  <!-- ═══════════════════════════════ NAVBAR ═══════════════════════════════ -->
+  <header class="fixed top-0 left-0 right-0 z-50 border-b border-white/5 backdrop-blur-md bg-[#080808]/80">
+    <nav class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="brand text-xl font-bold tracking-tight">
+        <span class="text-white">Jarumiri</span> Studios<span class="text-amber-400">.</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm text-gray-400 font-medium">
+        <a href="#services" class="nav-link hover:text-white transition-colors">Services</a>
+        <a href="#pricing"  class="nav-link hover:text-white transition-colors">Pricing</a>
+        <a href="#about"    class="nav-link hover:text-white transition-colors">About</a>
+        <a href="#career"   class="nav-link hover:text-white transition-colors">Careers</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/login"
+           class="hidden md:inline-flex text-sm font-semibold px-5 py-3.5 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors">
+          Log In
+        </a>
+        <a href="/hire"
+           class="text-sm font-semibold px-7 py-3.5 rounded-full bg-amber-400 text-black hover:bg-amber-300 transition-colors">
+          Book A Project
+        </a>
+        <!-- Hamburger (mobile only) -->
+        <button id="menu-btn" class="md:hidden flex flex-col justify-center items-center w-10 h-10 gap-1.5" aria-label="Open menu">
+          <span class="menu-bar block w-5 h-px bg-white transition-all duration-300"></span>
+          <span class="menu-bar block w-5 h-px bg-white transition-all duration-300"></span>
+          <span class="menu-bar block w-5 h-px bg-white transition-all duration-300"></span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- Mobile drawer -->
+    <div id="mobile-menu" class="md:hidden hidden border-t border-white/5 bg-[#080808]">
+      <div class="max-w-6xl mx-auto px-6 py-6 flex flex-col gap-5 text-sm text-gray-400 font-medium">
+        <a href="#process"  class="hover:text-white transition-colors" onclick="closeMobileMenu()">How It Works</a>
+        <a href="#services" class="hover:text-white transition-colors" onclick="closeMobileMenu()">Services</a>
+        <a href="#pricing"  class="hover:text-white transition-colors" onclick="closeMobileMenu()">Pricing</a>
+        <a href="#about"    class="hover:text-white transition-colors" onclick="closeMobileMenu()">About</a>
+        <a href="#career"   class="hover:text-white transition-colors" onclick="closeMobileMenu()">Careers</a>
+        <a href="/login"    class="hover:text-white transition-colors">Log In</a>
+      </div>
+    </div>
+  </header>
+
+  <script>
+    const menuBtn = document.getElementById('menu-btn');
+    const mobileMenu = document.getElementById('mobile-menu');
+    const bars = menuBtn.querySelectorAll('.menu-bar');
+
+    menuBtn.addEventListener('click', () => {
+      const isOpen = !mobileMenu.classList.contains('hidden');
+      mobileMenu.classList.toggle('hidden');
+      bars[0].style.transform = isOpen ? '' : 'translateY(6px) rotate(45deg)';
+      bars[1].style.opacity  = isOpen ? '' : '0';
+      bars[2].style.transform = isOpen ? '' : 'translateY(-6px) rotate(-45deg)';
+    });
+
+    function closeMobileMenu() {
+      mobileMenu.classList.add('hidden');
+      bars.forEach(b => { b.style.transform = ''; b.style.opacity = ''; });
+    }
+  </script>
+
+  <!-- ═══════════════════════════════ HERO ═══════════════════════════════ -->
+  <section class="hero-bg flex items-center pt-20">
+    <div class="max-w-6xl mx-auto px-6 py-14 md:py-20">
+      <p class="text-amber-400 text-sm font-semibold tracking-widest uppercase mb-6">Video Editing - Photo Retouching</p>
+      <h1 class="font-extrabold tracking-tight mb-6">
+        <span class="block text-3xl md:text-5xl mb-2">You recorded it.</span>
+        <span class="block gradient-text text-4xl md:text-8xl mb-4">Hand over the editing hassle</span>
+        <span class="block text-3xl md:text-5xl">and do more for your fans.</span>
+      </h1>
+      <p class="text-gray-400 text-lg md:text-xl max-w-xl mb-10 leading-relaxed">
+        Whether you're an <span class="gradient-text font-semibold">independent creator</span> just starting out or an <span class="gradient-text font-semibold">established brand</span> with high standards; quality editing will never be out of reach.
+      </p>
+      <div class="flex flex-wrap gap-4">
+        <a href="/hire"
+           class="px-7 py-3.5 rounded-full border border-transparent bg-amber-400 text-black font-semibold hover:bg-amber-300 transition-colors text-sm">
+          Book A Project
+        </a>
+        <a href="/track"
+           class="px-7 py-3.5 rounded-full border border-white/15 text-white font-semibold hover:border-white/40 transition-colors text-sm">
+          Track a Project
+        </a>
+      </div>
+
+      <!-- Brand trust bar -->
+      <div class="mt-16 pt-10 border-t border-white/8">
+        <p class="text-xs font-semibold tracking-widest text-gray-600 uppercase mb-6">for content creators publishing on</p>
+        <div class="flex flex-wrap gap-8 items-center">
+          <!-- Paste each brand SVG inside a span below -->
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48">
+              <rect width="37" height="37" x="5.5" y="5.5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" rx="4" ry="4" />
+              <circle cx="35.35" cy="12.65" r="2.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="24" cy="24" r="8.25" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <span>Instagram</span>
+          </span>
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M21.604 25.622L7.693 41.498M37.924 6.502L25.554 21.07M6.61 6.5l27.44 35h7.56l-27.439-35z" />
+            </svg>
+            <span>Twitter</span>
+          </span>
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M26.05 13.913a13.28 13.28 0 0 0-8.717-3.246C9.973 10.667 4 16.64 4 24s5.973 13.333 13.333 13.333m0-9.333c-2.213 0-4-1.787-4-4s1.787-4 4-4s4 1.787 4 4s-1.786 4-4 4" />
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M32.32 20.667c3.387.974 7.387 0 7.387 0c-1.16 5.066-4.84 8.24-10.147 8.626a13.31 13.31 0 0 1-12.227 8.04l4-12.713c4.112-13.068 6.22-13.953 15.971-13.953H44c-1.12 4.933-4.98 8.702-11.68 10" />
+            </svg>
+            <span>OnlyFans</span>
+          </span>
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="m24 14.141l13.319 13.32l-12.055 12.054a1.79 1.79 0 0 1-2.53 0L10.68 27.461z" />
+              <circle cx="24" cy="27.461" r="4.303" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" />
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M25.695 26.67a.804.804 0 0 1-1.196-1.015a1.892 1.892 0 0 0-1.854 3.16a1.894 1.894 0 0 0 3.05-2.145M24 14.142l3.422-3.423a9.418 9.418 0 1 1 13.32 13.32l-.754.753M10.68 27.46l-3.42-3.42a9.418 9.418 0 1 1 13.319-13.32l.753.754" />
+            </svg>
+            <span>Fansly</span>
+          </span>
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M40.83 8.48c1.14 0 2 1 1.54 2.86l-5.58 26.3c-.39 1.87-1.52 2.32-3.08 1.45L20.4 29.26a.4.4 0 0 1 0-.65l15.37-13.88c.7-.62-.15-.92-1.07-.36L15.41 26.54a.46.46 0 0 1-.4.05L6.82 24C5 23.47 5 22.22 7.23 21.33L40 8.69a2.2 2.2 0 0 1 .83-.21" />
+            </svg>
+            <span>Telegram</span>
+          </span>
+          <span class="h-10 flex items-center gap-2 text-white opacity-50 hover:opacity-100 transition-opacity [&_svg]:h-full [&_svg]:w-auto">
+            <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 48 48">
+              <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" d="M18.73 22.4A10.55 10.55 0 1 0 29.27 33V4.5a10.55 10.55 0 0 0 10.55 10.55" />
+            </svg>
+            <span>TikTok</span>
+          </span>
+          <span>... and many more</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ REEL ═══════════════════════════════ -->
+  <section id="reel" class="py-24 bg-[#0d0d0d]" style="display:none;">
+    <div class="max-w-6xl mx-auto px-6">
+      <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">Showreel</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-12">Selected Recent Works</h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-8">
+        <% const reelItems = [
+          { name: 'Client Name', date: 'June 2025' },
+          { name: 'Client Name', date: 'May 2025' },
+          { name: 'Client Name', date: 'April 2025' }
+        ]; %>
+        <% reelItems.forEach(function(item) { %>
+        <div>
+          <div class="rounded-xl bg-white/5 border border-white/8 w-full" style="aspect-ratio: 0.5625;"></div>
+          <div class="flex items-center gap-3 mt-3">
+            <div class="w-9 h-9 rounded-full bg-white/10 border border-white/10 flex-shrink-0"></div>
+            <div>
+              <p class="text-sm font-semibold text-white leading-tight"><%= item.name %></p>
+              <p class="text-xs text-gray-500"><%= item.date %></p>
+            </div>
+          </div>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ HOW IT WORKS ═══════════════════════════════ -->
+  <section id="process" class="py-24 bg-[#080808]">
+    <div class="max-w-6xl mx-auto px-6">
+      <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">The Process</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">How It Works</h2>
+      <p class="text-gray-500 text-lg mb-16 max-w-xl">Four straightforward steps from raw footage to final delivery.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-0">
+
+        <% const steps = [
+          {
+            num: '01',
+            title: 'Submit a Request',
+            desc: 'Fill out the booking form — name, location, contact info, and a quick brief on what you need. Upload your files directly (up to 250 MB). Every project gets attributed a Booking Request (BR) code. For files over 250 MB, send that BR code on Telegram along with the files.',
+            note: null
+          },
+          {
+            num: '02',
+            title: 'Invoice & Upfront',
+            desc: 'The request gets reviewed and an invoice is sent with a timeline estimate and total cost. A Stripe link covers 30% upfront before work begins. Revision rounds are included based on your package — anything beyond that is $30 per round.',
+            note: '30% upfront · revisions vary by package'
+          },
+          {
+            num: '03',
+            title: 'Production',
+            desc: 'Once the deposit lands, a confirmation goes out by email or Telegram and editing begins. Status can be tracked via the BR code. Any questions that come up during the project will be relayed directly.',
+            note: null
+          },
+          {
+            num: '04',
+            title: 'Delivery & Final Pay',
+            desc: 'When the project is done, you\'ll receive a link to pay the remaining balance. After payment clears, you\'re taken to a private page to download or preview the final video — and request any revisions you still have available.',
+            note: null
+          }
+        ]; %>
+
+        <% steps.forEach(function(step, i) { %>
+        <div class="flex flex-col mb-10 md:mb-0">
+          <!-- Bubble + connector row — no column padding so line runs flush to grid boundary -->
+          <div class="flex items-center mb-6">
+            <div class="w-16 h-16 rounded-full border border-white/10 bg-[#080808] flex items-center justify-center flex-shrink-0">
+              <span class="text-amber-400 font-bold text-sm font-mono"><%= step.num %></span>
+            </div>
+            <% if (i < steps.length - 1) { %>
+            <div class="hidden md:block flex-1 h-px bg-white/20 ml-4"></div>
+            <% } %>
+          </div>
+          <div class="pr-4">
+            <h3 class="font-bold text-white text-lg mb-3"><%= step.title %></h3>
+            <p class="text-gray-500 text-sm leading-relaxed flex-1"><%= step.desc %></p>
+            <% if (step.note) { %>
+            <span class="inline-block mt-4 text-[11px] font-semibold tracking-wider uppercase text-amber-400/70 border border-amber-400/20 rounded-full px-3 py-1 w-fit"><%= step.note %></span>
+            <% } %>
+          </div>
+        </div>
+
+        <!-- Arrow between steps (desktop) -->
+        <% if (i < steps.length - 1) { %>
+        <!-- intentional gap handled by grid -->
+        <% } %>
+        <% }); %>
+
+      </div>
+
+      <div class="mt-16 pt-10 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center gap-6">
+        <p class="text-gray-500 text-sm">Have a large project or not sure where to start?</p>
+        <a href="https://t.me/jarumiri" target="_blank"
+           class="text-sm font-semibold px-6 py-3 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors flex-shrink-0">
+          Get in Touch on Telegram →
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ SERVICES ═══════════════════════════════ -->
+  <section id="services" class="py-24 bg-[#080808]">
+    <div class="max-w-6xl mx-auto px-6">
+      <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">What You Get</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-12">Services</h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <% const services = [
+          { icon: '🎬', name: 'Video Editing', desc: 'Your raw footage turned into something people actually want to watch. Every cut lands, every second earns its place.' },
+          { icon: '🎨', name: 'Color Grading', desc: 'We adjust how the image looks — skin tones, lighting, mood — so the final video feels exactly how you pictured it, or better.' },
+          { icon: '🔊', name: 'Sound Design', desc: 'Bad audio kills good video. We clean up the sound, balance the music, and make sure everything sounds as good as it looks.' },
+          { icon: '✨', name: 'Motion Graphics', desc: 'Animated text, intros, outros, and on-screen elements that make your content look polished — not like something you edited on your phone.' }
+        ]; %>
+        <% services.forEach(function(s) { %>
+        <div class="p-6 rounded-2xl bg-white/[0.03] border border-white/8 card-hover">
+          <div class="text-3xl mb-4"><%= s.icon %></div>
+          <h3 class="font-bold text-white mb-2"><%= s.name %></h3>
+          <p class="text-gray-500 text-sm leading-relaxed"><%= s.desc %></p>
+        </div>
+        <% }); %>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ PRICING ═══════════════════════════════ -->
+  <section id="pricing" class="py-24 bg-[#0d0d0d]">
+    <div class="max-w-6xl mx-auto px-6">
+      <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">Simple & Clear</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-12">Pricing</h2>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+        <!-- Clip -->
+        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col">
+          <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Clip</p>
+          <p class="text-4xl font-bold text-white mb-1">$79</p>
+          <p class="text-gray-600 text-sm mb-2">per project</p>
+          <p class="text-gray-500 text-xs mb-6">Teasers, trailers, social cuts</p>
+          <ul class="text-gray-400 text-sm space-y-2.5 mb-8 flex-1">
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Up to 4-minute edit</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Color correction</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Music sync</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> 2 revision rounds</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Delivery in 3 days</li>
+          </ul>
+          <a href="/hire?tier=Clip" class="text-center py-3 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
+            Get Started
+          </a>
+        </div>
+
+        <!-- Scene — highlighted -->
+        <div class="p-7 rounded-2xl bg-amber-400/[0.07] border border-amber-400/30 card-hover flex flex-col relative">
+          <span class="absolute top-5 right-5 text-[10px] font-bold tracking-widest uppercase bg-amber-400 text-black px-2.5 py-1 rounded-full">Popular</span>
+          <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-3">Scene</p>
+          <p class="text-4xl font-bold text-white mb-1">$189</p>
+          <p class="text-gray-600 text-sm mb-2">per project</p>
+          <p class="text-gray-500 text-xs mb-6">Full scenes, VODs, premium content</p>
+          <ul class="text-gray-400 text-sm space-y-2.5 mb-8 flex-1">
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Up to 20-minute edit</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Full color grade</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Sound mix & music sync</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Basic titles</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> 3 revision rounds</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Delivery in 6 days</li>
+          </ul>
+          <a href="/hire?tier=Scene" class="text-center py-3 rounded-full bg-amber-400 text-black text-sm font-bold hover:bg-amber-300 transition-colors">
+            Get Started
+          </a>
+        </div>
+
+        <!-- Feature -->
+        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col">
+          <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Feature</p>
+          <p class="text-4xl font-bold text-white mb-1">$399</p>
+          <p class="text-gray-600 text-sm mb-2">per project</p>
+          <p class="text-gray-500 text-xs mb-6">Series, long-form, full productions</p>
+          <ul class="text-gray-400 text-sm space-y-2.5 mb-8 flex-1">
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Unlimited length / multi-part</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Full color grade + custom LUT</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Sound design & SFX</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Animated titles & overlays</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> 4 revision rounds</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Delivery in 10 days</li>
+          </ul>
+          <a href="/hire?tier=Feature" class="text-center py-3 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
+            Get Started
+          </a>
+        </div>
+
+      </div>
+
+      <!-- Add-ons -->
+      <div class="mt-10 p-7 rounded-2xl bg-white/[0.02] border border-white/6">
+        <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-5">Add-ons — stack on any tier</p>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Rush delivery</p>
+              <p class="text-gray-500 text-xs mt-0.5">Shave 2 days off turnaround</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$50</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Platform cut</p>
+              <p class="text-gray-500 text-xs mt-0.5">Portrait or square crop, per variant</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$30</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Captions / subtitles</p>
+              <p class="text-gray-500 text-xs mt-0.5">Burned-in or separate file</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$35</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Censored preview</p>
+              <p class="text-gray-500 text-xs mt-0.5">Blurred version for social promos</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$45</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Intro / outro bumper</p>
+              <p class="text-gray-500 text-xs mt-0.5">Custom animated brand bumper</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$75</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <span class="text-amber-400 mt-0.5 flex-shrink-0">+</span>
+            <div>
+              <p class="text-white text-sm font-medium">Extra revision round</p>
+              <p class="text-gray-500 text-xs mt-0.5">One additional consolidated batch</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1">$30</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+        <div>
+          <p class="text-white font-semibold text-lg mb-1">None of these feel like the right fit?</p>
+          <p class="text-gray-500 text-sm">Every project is different — custom pricing is always on the table.</p>
+        </div>
+        <a href="https://t.me/jarumiri" target="_blank"
+           class="text-sm font-semibold px-6 py-3.5 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors flex-shrink-0 whitespace-nowrap">
+          Let's Talk →
+        </a>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ ABOUT ═══════════════════════════════ -->
+  <section id="about" class="py-24 bg-[#080808]">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="max-w-2xl">
+        <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">The Editor</p>
+        <h2 class="text-3xl md:text-4xl font-bold mb-6">About Jarumiri Studios</h2>
+        <p class="text-gray-300 text-lg leading-relaxed mb-4">
+          Focusing on making the editing process seamless and powerful so you can spend less time tweaking details and more time focusing on creating more content. We understand that creating compelling content in the adult space requires a unique touch. It’s about capturing the exact mood, intensity, and connection you want your audience to feel.
+        </p>
+        <p class="text-gray-500 leading-relaxed">
+          No project gets taken on unless it can be done well. That's not a disclaimer — it's a standard. Clients get clear timelines, transparent pricing, and work that holds up.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ CAREERS ═══════════════════════════════ -->
+  <section id="career" class="py-24 bg-[#0d0d0d]">
+    <div class="max-w-6xl mx-auto px-6">
+      <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">Join the Studio</p>
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">We're looking for Talents</h2>
+      <p class="text-gray-500 text-lg mb-16 max-w-xl">Having experiences in the adult industry ? Or simply, genuine passion for the craft ? There may be a place here for you.</p>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-16">
+
+        <!-- Role 1 -->
+        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col gap-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <span class="text-[10px] font-bold tracking-widest uppercase text-amber-400/70 border border-amber-400/20 rounded-full px-3 py-1">Open Role</span>
+              <h3 class="font-bold text-white text-xl mt-4">Video Editor</h3>
+            </div>
+            <span class="text-3xl">🎬</span>
+          </div>
+          <p class="text-gray-500 text-sm leading-relaxed">Comfortable cutting narrative content, managing pacing, and delivering clean timelines under a deadline. Experience with DaVinci Resolve or Premiere Pro is a strong plus. A portfolio of real work matters more than credentials.</p>
+          <ul class="text-gray-500 text-sm space-y-2 mt-2">
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Short-form & long-form editing</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Color grading fundamentals</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Ability to meet tight turnarounds</li>
+          </ul>
+        </div>
+
+        <!-- Role 2 -->
+        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col gap-4">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <span class="text-[10px] font-bold tracking-widest uppercase text-amber-400/70 border border-amber-400/20 rounded-full px-3 py-1">Open Role</span>
+              <h3 class="font-bold text-white text-xl mt-4">Videographer</h3>
+            </div>
+            <span class="text-3xl">🎥</span>
+          </div>
+          <p class="text-gray-500 text-sm leading-relaxed">Someone who understands light, composition, and movement — and can bring that knowledge to a shoot without needing hand-holding. Familiarity with content creator environments is a bonus.</p>
+          <ul class="text-gray-500 text-sm space-y-2 mt-2">
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Strong sense of framing & composition</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Comfortable in fast-paced shoot environments</li>
+            <li class="flex gap-2"><span class="text-amber-400">✓</span> Own gear is a plus, not a requirement</li>
+          </ul>
+        </div>
+
+      </div>
+
+      <div class="p-8 rounded-2xl bg-amber-400/[0.05] border border-amber-400/15 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+        <div>
+          <p class="text-white font-semibold text-lg mb-1">Don't see your exact skill set listed?</p>
+          <p class="text-gray-500 text-sm">Reach out anyway. If the work is strong, the conversation is worth having.</p>
+        </div>
+        <a href="https://t.me/jarumiri" target="_blank"
+           class="text-sm font-semibold px-6 py-3.5 rounded-full bg-amber-400 text-black hover:bg-amber-300 transition-colors flex-shrink-0 whitespace-nowrap">
+          Send Your Work →
+        </a>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════════════════════════ FOOTER ═══════════════════════════════ -->
+  <footer class="border-t border-white/5 bg-[#0a0a0a] py-12">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+
+      <div>
+        <a href="/" class="brand text-lg font-bold">
+          <span class="text-white">Jarumiri</span><span class="text-amber-400">.</span>
+        </a>
+        <p class="text-gray-600 text-sm mt-1">Hobby-driven. Detail-obsessed.</p>
+      </div>
+
+      <div class="flex flex-wrap gap-6 text-sm text-gray-500">
+        <a href="#services" class="hover:text-white transition-colors">Services</a>
+        <a href="#pricing"  class="hover:text-white transition-colors">Pricing</a>
+        <a href="#about"    class="hover:text-white transition-colors">About</a>
+        <a href="/hire"     class="hover:text-white transition-colors">Book A Project</a>
+      </div>
+
+      <div class="text-sm text-gray-600">
+        <a href="https://t.me/jarumiri" target="_blank" class="hover:text-amber-400 transition-colors">
+          Telegram: @jarumiri
+        </a>
+        <p class="mt-1">&copy; 2026 Jarumiri Studios</p>
+      </div>
+
+    </div>
+  </footer>
+
 </body>
 </html>

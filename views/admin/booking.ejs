@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= booking.crCode %> | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .status-badge {
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 4px 12px; border-radius: 999px;
+    }
+    .status-pending   { background: rgba(245,158,11,0.12); color: #f59e0b; border: 1px solid rgba(245,158,11,0.25); }
+    .status-in-review { background: rgba(99,102,241,0.12);  color: #818cf8; border: 1px solid rgba(99,102,241,0.25); }
+    .status-accepted  { background: rgba(34,197,94,0.12);   color: #4ade80; border: 1px solid rgba(34,197,94,0.25); }
+    .status-declined  { background: rgba(239,68,68,0.12);   color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+    .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
+    .detail-value { font-size: 14px; color: #e5e7eb; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+    .status-btn {
+      font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #9ca3af; background: transparent;
+      transition: all 0.15s ease;
+    }
+    .status-btn:hover  { border-color: rgba(255,255,255,0.3); color: #fff; }
+    .status-btn.active { border-color: transparent; }
+    .status-btn.active.s-pending     { background: rgba(245,158,11,0.15); color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+    .status-btn.active.s-in-review  { background: rgba(99,102,241,0.15);  color: #818cf8; border-color: rgba(99,102,241,0.3); }
+    .status-btn.active.s-accepted   { background: rgba(34,197,94,0.15);   color: #4ade80; border-color: rgba(34,197,94,0.3); }
+    .status-btn.active.s-declined   { background: rgba(239,68,68,0.15);   color: #f87171; border-color: rgba(239,68,68,0.3); }
+    .status-btn.active.s-in-progress { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
+    .status-btn.active.s-completed  { background: rgba(16,185,129,0.15);  color: #34d399; border-color: rgba(16,185,129,0.3); }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+      </div>
+      <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+
+    <!-- Top row: client + status -->
+    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-6">
+      <div>
+        <h1 class="text-2xl font-bold text-white"><%= booking.name %></h1>
+        <p class="text-gray-500 text-sm mt-1"><%= booking.email %> · <%= booking.location %></p>
+        <% if (booking.telegramHandle) { %>
+        <a href="https://t.me/<%= booking.telegramHandle.replace('@','') %>" target="_blank"
+          class="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white mt-1 transition-colors">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+          @<%= booking.telegramHandle.replace('@','') %>
+        </a>
+        <% } %>
+      </div>
+
+      <!-- Status picker -->
+      <div class="card !p-5 flex flex-col gap-3 min-w-[220px]">
+        <p class="detail-label">Status</p>
+        <div class="flex flex-wrap gap-2">
+          <% ['pending','in-review','accepted','declined','in-progress','completed'].forEach(s => { %>
+          <form action="/admin/booking/<%= booking._id %>/status" method="POST" style="display:inline;">
+            <input type="hidden" name="status" value="<%= s %>" />
+            <button type="submit"
+              class="status-btn s-<%= s %> <%= booking.status === s ? 'active' : '' %>">
+              <%= s %>
+            </button>
+          </form>
+          <% }) %>
+        </div>
+        <p class="text-xs text-gray-600">
+          Updated <%= new Date(booking.updatedAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %>
+        </p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <!-- Project details -->
+      <div class="md:col-span-2 space-y-6">
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-5">Project details</h2>
+          <div class="grid grid-cols-2 gap-5 mb-5">
+            <div>
+              <p class="detail-label">Services</p>
+              <p class="detail-value"><%= booking.serviceType.join(', ') %></p>
+            </div>
+            <div>
+              <p class="detail-label">Package</p>
+              <p class="detail-value">
+                <%= booking.pricingTier %>
+                <% if (booking.pricingTier === 'Custom' && booking.budget) { %>
+                <span class="text-amber-400 ml-1">(<%= booking.budget %>)</span>
+                <% } %>
+              </p>
+            </div>
+            <% if (booking.addOns && booking.addOns.length > 0) { %>
+            <div class="col-span-2">
+              <p class="detail-label">Add-ons</p>
+              <p class="detail-value"><%= booking.addOns.join(' · ') %></p>
+            </div>
+            <% } %>
+            <div>
+              <p class="detail-label">Submitted</p>
+              <p class="detail-value"><%= new Date(booking.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' }) %></p>
+            </div>
+            <div>
+              <p class="detail-label">BR Code</p>
+              <p class="detail-value font-mono text-amber-400"><%= booking.crCode %></p>
+            </div>
+          </div>
+          <% const TIER_PRICES = { Clip: 79, Scene: 189, Feature: 399 };
+             const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
+             const tierBase = TIER_PRICES[booking.pricingTier];
+             if (tierBase) {
+               const addonTotal = (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+          %>
+          <div class="border-t border-white/5 pt-5 mb-5">
+            <p class="detail-label mb-3">Client estimate</p>
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-sm"><span class="text-gray-400"><%= booking.pricingTier %> package</span><span class="text-gray-200">$<%= tierBase %></span></div>
+              <% (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
+              <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
+              <% } }) %>
+              <% if (booking.couponCode && booking.discountAmount > 0) { %>
+              <div class="flex justify-between text-sm"><span class="text-green-400">Coupon (<%= booking.couponCode %>)</span><span class="text-green-400">−$<%= booking.discountAmount.toFixed(2) %></span></div>
+              <% } %>
+              <div class="flex justify-between text-sm pt-2 border-t border-white/5 mt-2"><span class="text-gray-400 font-medium">Total</span><span class="text-white font-semibold">$<%= (tierBase + addonTotal - (booking.discountAmount || 0)).toFixed(2) %></span></div>
+            </div>
+          </div>
+          <% } %>
+          <div>
+            <p class="detail-label mb-2">Project brief</p>
+            <p class="detail-value leading-relaxed whitespace-pre-wrap text-gray-300"><%= booking.projectBrief %></p>
+          </div>
+        </div>
+
+        <!-- Files -->
+        <% if (booking.uploadedFiles && booking.uploadedFiles.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Uploaded files <span class="text-gray-600 font-normal text-sm"><%= booking.uploadedFiles.length %></span></h2>
+          <div class="space-y-4">
+            <% booking.uploadedFiles.forEach(f => {
+              const url = '/admin/uploads/' + f.storedName;
+              const isImage = /^image\//i.test(f.mimetype);
+              const isVideo = /^video\//i.test(f.mimetype);
+              const isAudio = /^audio\//i.test(f.mimetype);
+              const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+            %>
+            <div class="border border-white/5 rounded-xl overflow-hidden">
+
+              <% if (isImage) { %>
+              <a href="<%= url %>" target="_blank">
+                <img src="<%= url %>" alt="<%= f.originalName %>"
+                  class="w-full max-h-72 object-contain bg-black/40" />
+              </a>
+              <% } else if (isVideo) { %>
+              <video controls preload="metadata"
+                class="w-full max-h-72 bg-black">
+                <source src="<%= url %>" type="<%= f.mimetype %>">
+              </video>
+              <% } else if (isAudio) { %>
+              <div class="px-4 pt-4">
+                <audio controls class="w-full">
+                  <source src="<%= url %>" type="<%= f.mimetype %>">
+                </audio>
+              </div>
+              <% } %>
+
+              <div class="flex items-center justify-between px-4 py-3 gap-3">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <% if (isVideo) { %>
+                  <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M4 6h8a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2z"/></svg>
+                  <% } else if (isImage) { %>
+                  <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                  <% } else if (isAudio) { %>
+                  <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                  <% } else { %>
+                  <svg class="w-4 h-4 text-amber-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  <% } %>
+                  <span class="text-gray-300 text-sm truncate"><%= f.originalName %></span>
+                </div>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="text-gray-600 text-xs"><%= sizeLabel %></span>
+                  <a href="<%= url %>" download="<%= f.originalName %>"
+                    class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap">
+                    Download
+                  </a>
+                </div>
+              </div>
+
+            </div>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Media links -->
+        <% if (booking.mediaLinks && booking.mediaLinks.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Media links</h2>
+          <div class="space-y-2">
+            <% booking.mediaLinks.forEach(link => { %>
+            <a href="<%= link %>" target="_blank" rel="noopener"
+              class="flex items-center gap-3 text-sm text-amber-400 hover:text-amber-300 transition-colors group">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+              <span class="truncate group-hover:underline"><%= link.replace(/^https?:\/\//, '') %></span>
+            </a>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+        <!-- Revision requests -->
+        <% if (booking.revisions && booking.revisions.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">
+            Revision requests
+            <% const pendingRevs = booking.revisions.filter(r => r.status === 'pending'); %>
+            <% if (pendingRevs.length > 0) { %>
+            <span class="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-400 border border-amber-400/25"><%= pendingRevs.length %> pending</span>
+            <% } %>
+          </h2>
+          <div class="space-y-3">
+            <% booking.revisions.forEach(r => { %>
+            <div class="border border-white/5 rounded-xl px-4 py-3 <%= r.status === 'pending' ? 'border-amber-400/15 bg-amber-400/5' : '' %>">
+              <p class="text-gray-300 text-sm whitespace-pre-wrap mb-2"><%= r.message %></p>
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-gray-600 text-xs"><%= new Date(r.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %></p>
+                <% if (r.status === 'pending') { %>
+                <form action="/admin/booking/<%= booking._id %>/revision/<%= r._id %>/reviewed" method="POST">
+                  <button type="submit" class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60">
+                    Mark reviewed
+                  </button>
+                </form>
+                <% } else { %>
+                <span class="text-xs text-green-400 font-medium">Reviewed</span>
+                <% } %>
+              </div>
+            </div>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+      </div>
+
+      <!-- Sidebar: contact -->
+      <div class="space-y-6">
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-5">Contact</h2>
+          <div class="space-y-4">
+            <div>
+              <p class="detail-label">Name</p>
+              <p class="detail-value"><%= booking.name %></p>
+            </div>
+            <div>
+              <p class="detail-label">Email</p>
+              <a href="mailto:<%= booking.email %>" class="detail-value text-amber-400 hover:text-amber-300 transition-colors"><%= booking.email %></a>
+            </div>
+            <div>
+              <p class="detail-label">Location</p>
+              <p class="detail-value"><%= booking.location %></p>
+            </div>
+            <% if (booking.telegramHandle) { %>
+            <div>
+              <p class="detail-label">Telegram</p>
+              <a href="https://t.me/<%= booking.telegramHandle.replace('@','') %>" target="_blank"
+                class="detail-value text-amber-400 hover:text-amber-300 transition-colors">
+                @<%= booking.telegramHandle.replace('@','') %>
+              </a>
+            </div>
+            <% } %>
+          </div>
+        </div>
+
+        <!-- Payment -->
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Payment</h2>
+          <% if (stripeError) { %>
+          <div class="mb-4 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
+            Stripe error: <%= stripeError %>
+          </div>
+          <% } %>
+          <% if (booking.agreedPrice) { %>
+          <p class="detail-label mb-1">Agreed price</p>
+          <p class="text-white font-semibold text-lg mb-4">$<%= booking.agreedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) %></p>
+          <% } %>
+
+          <% if (booking.depositStatus === 'none') { %>
+          <%
+            const canSendDeposit = booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress';
+          %>
+          <form action="/admin/booking/<%= booking._id %>/send-deposit" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Agreed price (USD)</label>
+              <%
+                const _estimatedTotal = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+              %>
+              <input id="deposit-price-input" type="number" name="agreedPrice" min="1" step="0.01" required
+                placeholder="e.g. 250.00"
+                <% if (_estimatedTotal > 0) { %>value="<%= _estimatedTotal.toFixed(2) %>"<% } %>
+                <% if (!canSendDeposit) { %>disabled<% } %>
+                class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
+            </div>
+            <button id="deposit-submit-btn" type="submit" disabled
+              class="w-full px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-300 disabled:hover:bg-amber-400">
+              Send Deposit Invoice (30%)
+            </button>
+          </form>
+          <% if (!canSendDeposit) { %>
+          <p class="text-xs text-gray-600 mt-2">Set status to <span class="text-gray-400">In Review</span> or higher to enable invoicing.</p>
+          <% } %>
+
+          <% } else if (booking.depositStatus === 'pending') { %>
+          <div class="flex items-start gap-2.5">
+            <div class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
+            <div>
+              <p class="text-sm text-white font-medium">Deposit invoice sent</p>
+              <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.30).toFixed(2) %>)</p>
+            </div>
+          </div>
+
+          <% } else if (booking.depositStatus === 'paid' && booking.finalPaymentStatus === 'none') { %>
+          <div class="flex items-start gap-2.5 mb-4">
+            <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+            <div>
+              <p class="text-sm text-white font-medium">Deposit received</p>
+              <p class="text-xs text-gray-500 mt-0.5">$<%= (booking.agreedPrice * 0.30).toFixed(2) %> paid</p>
+            </div>
+          </div>
+          <form action="/admin/booking/<%= booking._id %>/send-final" method="POST">
+            <button type="submit"
+              class="w-full px-4 py-2.5 rounded-full bg-green-500 hover:bg-green-400 text-black text-sm font-semibold transition-colors">
+              Send Final Invoice (70%)
+            </button>
+          </form>
+
+          <% } else if (booking.finalPaymentStatus === 'pending') { %>
+          <div class="space-y-2.5">
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <div>
+                <p class="text-sm text-white font-medium">Deposit received</p>
+                <p class="text-xs text-gray-500 mt-0.5">$<%= (booking.agreedPrice * 0.30).toFixed(2) %> paid</p>
+              </div>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
+              <div>
+                <p class="text-sm text-white font-medium">Final invoice sent</p>
+                <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.70).toFixed(2) %>)</p>
+              </div>
+            </div>
+          </div>
+
+          <% } else if (booking.finalPaymentStatus === 'paid') { %>
+          <div class="space-y-2.5">
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <p class="text-sm text-white font-medium">Deposit received — $<%= (booking.agreedPrice * 0.30).toFixed(2) %></p>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <p class="text-sm text-white font-medium">Final payment received — $<%= (booking.agreedPrice * 0.70).toFixed(2) %></p>
+            </div>
+            <p class="text-xs text-green-400 font-semibold pt-1">All payments received</p>
+          </div>
+          <% } %>
+        </div>
+
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-3">Quick actions</h2>
+          <div class="space-y-2">
+            <a href="mailto:<%= booking.email %>?subject=Re: <%= booking.crCode %> — Your Jarumiri Studios Request"
+              class="flex items-center gap-2.5 text-sm text-gray-400 hover:text-white transition-colors py-1">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              Email client
+            </a>
+            <% if (booking.telegramHandle) { %>
+            <a href="https://t.me/<%= booking.telegramHandle.replace('@','') %>" target="_blank"
+              class="flex items-center gap-2.5 text-sm text-gray-400 hover:text-white transition-colors py-1">
+              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.96 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.244-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+              Message on Telegram
+            </a>
+            <% } %>
+            <div class="pt-2 mt-2 border-t border-white/5">
+              <button type="button" onclick="document.getElementById('delete-modal').classList.remove('hidden')"
+                class="flex items-center gap-2.5 text-sm text-red-500 hover:text-red-400 transition-colors py-1 w-full">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                Delete request
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Accept + invoice modal (shown when clicking accepted with no invoice yet) -->
+  <% if (booking.depositStatus === 'none') { %>
+  <%
+    const _modalEstimate = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+  %>
+  <div id="accept-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('accept-modal').classList.add('hidden')"></div>
+    <div class="relative bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+      <div class="w-12 h-12 rounded-full bg-amber-400/10 border border-amber-400/20 flex items-center justify-center mb-5 mx-auto">
+        <svg class="w-5 h-5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      </div>
+      <h2 class="text-white font-bold text-lg text-center mb-1">Accept & send deposit invoice</h2>
+      <p class="text-gray-500 text-sm text-center mb-6"><span class="font-mono text-amber-400"><%= booking.crCode %></span> — <%= booking.name %></p>
+      <form action="/admin/booking/<%= booking._id %>/send-deposit" method="POST" class="space-y-4" id="accept-invoice-form">
+        <div>
+          <label class="text-xs text-gray-500 uppercase tracking-wider block mb-1.5">Agreed price (USD)</label>
+          <input id="accept-modal-price" type="number" name="agreedPrice" min="1" step="0.01" required
+            <% if (_modalEstimate > 0) { %>value="<%= _modalEstimate.toFixed(2) %>"<% } %>
+            placeholder="e.g. 250.00"
+            class="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50" />
+        </div>
+        <div class="flex gap-3 pt-1">
+          <button type="button" onclick="document.getElementById('accept-modal').classList.add('hidden')"
+            class="flex-1 px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-400 hover:text-white hover:border-white/25 transition-colors">
+            Cancel
+          </button>
+          <button id="accept-modal-confirm" type="submit"
+            class="flex-1 px-4 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Accept & invoice
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <% } %>
+
+  <!-- Delete confirmation modal -->
+  <div id="delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="document.getElementById('delete-modal').classList.add('hidden')"></div>
+    <div class="relative bg-[#111] border border-white/10 rounded-2xl p-8 max-w-sm w-full shadow-2xl">
+      <div class="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-5 mx-auto">
+        <svg class="w-5 h-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+      </div>
+      <h2 class="text-white font-bold text-lg text-center mb-2">Delete this request?</h2>
+      <p class="text-gray-500 text-sm text-center mb-6">
+        <span class="font-mono text-amber-400"><%= booking.crCode %></span> — <%= booking.name %><br>
+        This cannot be undone.
+      </p>
+      <div class="flex gap-3">
+        <button type="button" onclick="document.getElementById('delete-modal').classList.add('hidden')"
+          class="flex-1 px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-400 hover:text-white hover:border-white/25 transition-colors">
+          Cancel
+        </button>
+        <form action="/admin/booking/<%= booking._id %>/delete" method="POST" class="flex-1">
+          <button type="submit"
+            class="w-full px-4 py-2.5 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-sm font-semibold transition-colors">
+            Delete
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Intercept "accepted" status button when no invoice has been sent yet
+    <% if (booking.depositStatus === 'none') { %>
+    (function () {
+      var acceptBtn = document.querySelector('.s-accepted');
+      if (!acceptBtn) return;
+      acceptBtn.closest('form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        document.getElementById('accept-modal').classList.remove('hidden');
+        document.getElementById('accept-modal-price').focus();
+      });
+
+      var modalPrice   = document.getElementById('accept-modal-price');
+      var modalConfirm = document.getElementById('accept-modal-confirm');
+      var modalForm    = document.getElementById('accept-invoice-form');
+
+      function validateModal() {
+        modalConfirm.disabled = !modalPrice.value || parseFloat(modalPrice.value) <= 0;
+      }
+      modalPrice.addEventListener('input', validateModal);
+      validateModal();
+
+      modalForm.addEventListener('submit', function () {
+        modalConfirm.disabled = true;
+        modalConfirm.innerHTML = '<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>';
+      });
+    }());
+    <% } %>
+
+    const priceInput = document.getElementById('deposit-price-input');
+    const submitBtn  = document.getElementById('deposit-submit-btn');
+    if (priceInput && submitBtn) {
+      const check = () => { submitBtn.disabled = priceInput.disabled || !priceInput.value || parseFloat(priceInput.value) <= 0; };
+      priceInput.addEventListener('input', check);
+      check();
+
+      submitBtn.closest('form').addEventListener('submit', function () {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>';
+      });
+    }
+  </script>
+</body>
+</html>

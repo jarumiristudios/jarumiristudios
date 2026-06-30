@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gallery | Jarumiri Studios</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; min-height: 40px; border-radius: 6px;
+      font-size: 13.5px; color: #6b7280; font-weight: 500;
+      text-decoration: none; transition: all 0.15s;
+    }
+    .sidebar-link:hover { color: #e5e7eb; background: rgba(255,255,255,0.045); }
+    .sidebar-link.active { color: #fff; background: rgba(255,255,255,0.07); }
+    .sidebar-link.danger:hover { color: #f87171; background: rgba(239,68,68,0.06); }
+
+    .status-pill {
+      display: inline-flex; align-items: center;
+      padding: 3px 10px; border-radius: 9999px;
+      font-size: 10.5px; font-weight: 600;
+      letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;
+    }
+    .status-pending     { background: rgba(245,158,11,0.1);  color: #f59e0b; border: 1px solid rgba(245,158,11,0.2); }
+    .status-in-review   { background: rgba(99,102,241,0.1);  color: #818cf8; border: 1px solid rgba(99,102,241,0.2); }
+    .status-accepted    { background: rgba(34,197,94,0.1);   color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+    .status-declined    { background: rgba(239,68,68,0.1);   color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+    .status-in-progress { background: rgba(59,130,246,0.1);  color: #60a5fa; border: 1px solid rgba(59,130,246,0.2); }
+    .status-completed   { background: rgba(16,185,129,0.1);  color: #34d399; border: 1px solid rgba(16,185,129,0.2); }
+
+    .filter-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 12px; border-radius: 9999px;
+      font-size: 12px; font-weight: 500; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: transparent; color: #6b7280; transition: all 0.15s;
+    }
+    .filter-btn:hover { color: #d1d5db; border-color: rgba(255,255,255,0.15); }
+    .filter-btn.active { color: #fff; background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.15); }
+
+    .sort-btn {
+      font-size: 12px; font-weight: 500; padding: 5px 10px; border-radius: 6px;
+      color: #6b7280; text-decoration: none; transition: all 0.15s;
+    }
+    .sort-btn:hover { color: #d1d5db; }
+    .sort-btn.active { color: #fff; }
+
+    /* ── Project card ── */
+    .project-card {
+      aspect-ratio: 1 / 1;
+      position: relative;
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.07);
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s;
+      background: #000;
+    }
+    .project-card:hover { border-color: rgba(255,255,255,0.2); transform: translateY(-1px); }
+
+    /* Level 1 — fills the whole card */
+    .card-l1 {
+      position: absolute;
+      inset: 0;
+    }
+    .card-l1 video, .card-l1 img {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .card-l1-placeholder {
+      width: 100%; height: 100%;
+      background: #f59e0b;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Level 2 — file strip overlaid at the bottom */
+    .card-l2 {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 52px;
+      background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(6px);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 8px;
+      overflow: hidden;
+    }
+    .l2-thumb {
+      flex-shrink: 0;
+      width: 36px; height: 36px;
+      border-radius: 4px;
+      overflow: hidden;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.1);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .l2-thumb img, .l2-thumb video {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+    .l2-more {
+      font-size: 10px; color: rgba(255,255,255,0.5); white-space: nowrap;
+      flex-shrink: 0; margin-left: 2px;
+    }
+
+    /* ── Modal ── */
+    #gallery-modal {
+      display: none;
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.88);
+      backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+      padding: 28px;
+      box-sizing: border-box;
+    }
+    #gallery-modal.open { display: flex; }
+
+    .modal-container {
+      background: #111;
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 12px;
+      width: 100%; max-width: 1140px;
+      height: 100%; max-height: 740px;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 13px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex-shrink: 0;
+    }
+
+    .modal-body {
+      display: flex; flex: 1; overflow: hidden;
+    }
+
+    /* Left: player */
+    .modal-player-wrap {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+    #modal-player {
+      flex: 1;
+      background: #000;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; position: relative;
+    }
+    #modal-player video { max-width: 100%; max-height: 100%; display: block; }
+    #modal-player img  { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+
+    .modal-info-bar {
+      flex-shrink: 0;
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 16px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+    }
+
+    /* Right: file grid panel */
+    .modal-file-panel {
+      width: 260px; flex-shrink: 0;
+      border-left: 1px solid rgba(255,255,255,0.07);
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .modal-file-panel-header {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    #modal-file-grid {
+      flex: 1; overflow-y: auto;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+      align-content: start;
+    }
+    .modal-thumb {
+      aspect-ratio: 1 / 1;
+      border-radius: 6px; overflow: hidden;
+      cursor: pointer;
+      border: 2px solid transparent;
+      background: rgba(255,255,255,0.04);
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.15s;
+    }
+    .modal-thumb:hover { border-color: rgba(255,255,255,0.2); }
+    .modal-thumb.selected { border-color: #f59e0b; }
+    .modal-thumb img, .modal-thumb video {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased">
+
+  <!-- Mobile top bar -->
+  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center justify-between px-4">
+    <span class="brand text-[15px] font-bold text-white">Jarumiri<span class="text-amber-400">.</span></span>
+    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-white transition-colors p-1.5">
+      <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
+    </button>
+  </header>
+
+  <div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-30 hidden" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed top-0 left-0 h-screen w-55 bg-[#0d0d0d] border-r border-white/5 z-40 flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200">
+    <div class="h-16.25 flex items-center px-5 border-b border-white/5 shrink-0">
+      <span class="brand text-[15px] font-bold text-white">Jarumiri Studios<span class="text-amber-400">.</span></span>
+    </div>
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <a href="/dashboard" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:grid-view" width="20" height="20"></iconify-icon>
+        Overview
+      </a>
+      <a href="/dashboard/gallery" class="sidebar-link active">
+        <iconify-icon icon="material-symbols-light:photo-library" width="20" height="20"></iconify-icon>
+        Gallery
+      </a>
+      <a href="/dashboard/notifications" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:notifications" width="20" height="20"></iconify-icon>
+        <span class="flex-1">Notifications</span>
+        <% if (locals.unreadCount > 0) { %>
+        <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;"><%= unreadCount %></span>
+        <% } %>
+      </a>
+      <a href="/dashboard/invoices" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:receipt-long-outline" width="20" height="20"></iconify-icon>
+        Invoices
+      </a>
+      <a href="/dashboard/account" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:person" width="20" height="20"></iconify-icon>
+        Account
+      </a>
+    </nav>
+
+    <div class="px-3 pb-4 border-t border-white/5 shrink-0 space-y-1">
+      <a href="/dashboard/new"
+        class="flex items-center gap-2.5 w-full px-3 min-h-10 rounded-md bg-amber-400 text-black text-[13.5px] font-bold hover:bg-amber-300 transition-colors">
+        <iconify-icon icon="material-symbols-light:add" width="20" height="20"></iconify-icon>
+        New project
+      </a>
+      <a href="https://t.me/jarumiri" target="_blank" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:forum" width="20" height="20"></iconify-icon>
+        Support
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="lg:ml-55 min-h-screen">
+    <div class="lg:hidden h-14"></div>
+
+    <main style="padding: 50px;">
+
+      <% if (!projects || projects.length === 0) { %>
+      <div class="text-center py-20 border border-white/5 rounded-md bg-white/1">
+        <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
+          <iconify-icon icon="material-symbols-light:photo-library" width="22" height="22" class="text-gray-700"></iconify-icon>
+        </div>
+        <p class="text-gray-600 text-sm mb-3">No files submitted yet.</p>
+        <a href="/dashboard/new" class="text-amber-400 text-sm hover:text-amber-300 transition-colors font-medium">Start a project →</a>
+      </div>
+
+      <% } else { %>
+
+      <!-- Filters + Sort -->
+      <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button data-type-filter="all" class="filter-btn active" onclick="applyFilter('all')">All</button>
+          <button data-type-filter="video" class="filter-btn" onclick="applyFilter('video')">
+            <iconify-icon icon="material-symbols-light:videocam" width="13" height="13"></iconify-icon>
+            Video
+          </button>
+          <button data-type-filter="audio" class="filter-btn" onclick="applyFilter('audio')">
+            <iconify-icon icon="material-symbols-light:music-note" width="13" height="13"></iconify-icon>
+            Audio
+          </button>
+          <button data-type-filter="image" class="filter-btn" onclick="applyFilter('image')">
+            <iconify-icon icon="material-symbols-light:image" width="13" height="13"></iconify-icon>
+            Image
+          </button>
+          <button data-type-filter="other" class="filter-btn" onclick="applyFilter('other')">
+            <iconify-icon icon="material-symbols-light:attach-file" width="13" height="13"></iconify-icon>
+            Other
+          </button>
+        </div>
+        <div class="flex items-center gap-0.5 text-gray-700">
+          <span class="text-xs mr-1.5">Sort:</span>
+          <a href="/dashboard/gallery?sort=newest" class="sort-btn <%= sort === 'newest' ? 'active' : '' %>">Newest</a>
+          <span class="text-gray-800">·</span>
+          <a href="/dashboard/gallery?sort=oldest" class="sort-btn <%= sort === 'oldest' ? 'active' : '' %>">Oldest</a>
+        </div>
+      </div>
+
+      <!-- Card grid -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;" id="project-grid">
+        <% projects.forEach((project, i) => {
+          const firstVideo = project.uploadedFiles.find(f => /^video\//i.test(f.mimetype));
+          const otherFiles = project.uploadedFiles.filter(f => f !== firstVideo);
+          const l2Show   = otherFiles.length > 8 ? otherFiles.slice(0, 3) : otherFiles;
+          const l2More   = otherFiles.length > 8 ? otherFiles.length - 3 : 0;
+          const fileTypeSet = new Set(project.uploadedFiles.map(f =>
+            /^video\//i.test(f.mimetype) ? 'video' :
+            /^audio\//i.test(f.mimetype) ? 'audio' :
+            /^image\//i.test(f.mimetype) ? 'image' : 'other'
+          ));
+          const dateStr = new Date(project.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        %>
+        <div class="project-card"
+          data-index="<%= i %>"
+          data-types="<%= [...fileTypeSet].join(',') %>"
+          onclick="openModal(<%= i %>)">
+
+          <!-- Level 1: main visual -->
+          <div class="card-l1">
+            <% if (firstVideo) { %>
+            <video src="/dashboard/uploads/<%= firstVideo.storedName %>" muted preload="auto" class="gallery-thumb-vid"></video>
+            <% } else { %>
+            <div class="card-l1-placeholder">
+              <iconify-icon icon="material-symbols-light:music-note-2" width="36" height="36" style="color:#000;opacity:0.6;"></iconify-icon>
+            </div>
+            <% } %>
+            <!-- Top overlay: name+service left, date right -->
+            <div style="position:absolute;top:0;left:0;right:0;background:linear-gradient(to bottom,rgba(0,0,0,0.72) 0%,transparent 100%);padding:10px 10px 22px;display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+              <div style="min-width:0;">
+                <p style="font-size:14px;font-weight:700;color:#fff;font-family:monospace;letter-spacing:0.04em;text-shadow:0 1px 3px rgba(0,0,0,0.8);margin:0 0 1px;"><%= project.crCode %></p>
+                <p style="font-size:12px;color:rgba(255,255,255,0.7);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><%= project.serviceType.join(', ') %></p>
+              </div>
+              <span style="font-size:10px;color:rgba(255,255,255,0.5);white-space:nowrap;flex-shrink:0;padding-top:2px;"><%= dateStr %></span>
+            </div>
+          </div>
+
+          <!-- Level 2: other files strip (only when files exist) -->
+          <% if (otherFiles.length > 0) { %>
+          <div class="card-l2">
+            <% l2Show.forEach(f => {
+              const isImg = /^image\//i.test(f.mimetype);
+              const isVid = /^video\//i.test(f.mimetype);
+              const isAud = /^audio\//i.test(f.mimetype);
+              const url = '/dashboard/uploads/' + f.storedName;
+            %>
+            <div class="l2-thumb">
+              <% if (isImg) { %>
+              <img src="<%= url %>" alt="" />
+              <% } else if (isVid) { %>
+              <video src="<%= url %>" muted preload="auto" class="gallery-thumb-vid"></video>
+              <% } else if (isAud) { %>
+              <iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>
+              <% } else { %>
+              <iconify-icon icon="material-symbols-light:attach-file" width="13" height="13" style="color:#6b7280;"></iconify-icon>
+              <% } %>
+            </div>
+            <% }) %>
+            <% if (l2More > 0) { %>
+            <span class="l2-more">and <%= l2More %> more...</span>
+            <% } %>
+          </div>
+          <% } %>
+
+        </div>
+        <% }) %>
+      </div>
+
+      <% } %>
+
+    </main>
+  </div>
+
+  <!-- Modal -->
+  <div id="gallery-modal" onclick="if(event.target===this)closeModal()">
+    <div class="modal-container">
+
+      <!-- Header -->
+      <div class="modal-header">
+        <div style="display:flex;flex-direction:column;gap:3px;">
+          <span id="modal-crcode" style="font-size:16px;font-weight:700;color:#fff;font-family:monospace;letter-spacing:0.04em;"></span>
+          <span id="modal-service" style="font-size:13px;color:#9ca3af;"></span>
+        </div>
+        <button onclick="closeModal()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#6b7280;display:flex;align-items:center;padding:4px;border-radius:6px;transition:color 0.15s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='#6b7280'">
+          <iconify-icon icon="material-symbols-light:close" width="20" height="20"></iconify-icon>
+        </button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body">
+
+        <!-- Left: main player -->
+        <div class="modal-player-wrap">
+          <div id="modal-player"></div>
+          <div class="modal-info-bar" id="modal-info-bar"></div>
+        </div>
+
+        <!-- Right: file grid -->
+        <div class="modal-file-panel">
+          <div class="modal-file-panel-header">
+            <span id="modal-file-count" style="font-size:11px;color:#6b7280;font-weight:500;"></span>
+          </div>
+          <div id="modal-file-grid"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const PROJECTS = <%- JSON.stringify(projects.map(p => ({
+    id: p._id,
+    crCode: p.crCode,
+    serviceType: p.serviceType,
+    status: p.status,
+    files: (p.uploadedFiles || []).map(f => ({
+      storedName: f.storedName,
+      originalName: f.originalName,
+      mimetype: f.mimetype,
+      size: f.size,
+    })),
+  }))) %>;
+
+  let activeFilter = 'all';
+  let modalProject = null;
+  let modalFileIdx = null;
+
+  function fileType(m) {
+    if (/^video\//i.test(m))  return 'video';
+    if (/^audio\//i.test(m))  return 'audio';
+    if (/^image\//i.test(m))  return 'image';
+    return 'other';
+  }
+
+  function sizeLabel(b) {
+    return b < 1048576 ? (b/1024).toFixed(1)+' KB' : (b/1048576).toFixed(1)+' MB';
+  }
+
+  // ── Modal ──────────────────────────────────────────────
+  function openModal(index) {
+    const p = PROJECTS[index];
+    modalProject = p;
+
+    document.getElementById('modal-crcode').textContent  = p.crCode;
+    document.getElementById('modal-service').textContent = p.serviceType.join(', ');
+    document.getElementById('modal-file-count').textContent = p.files.length + ' file' + (p.files.length !== 1 ? 's' : '');
+
+    // Build file grid
+    const grid = document.getElementById('modal-file-grid');
+    grid.innerHTML = p.files.map((f, i) => {
+      const type = fileType(f.mimetype);
+      const url  = '/dashboard/uploads/' + f.storedName;
+      let inner  = '';
+      if (type === 'image') {
+        inner = `<img src="${url}" alt="" />`;
+      } else if (type === 'video') {
+        inner = `<video src="${url}" muted preload="auto" class="modal-thumb-vid"></video>`;
+      } else if (type === 'audio') {
+        inner = `<div style="width:100%;height:100%;background:#f59e0b22;display:flex;align-items:center;justify-content:center;">
+          <iconify-icon icon="material-symbols-light:music-note-2" width="22" height="22" style="color:#f59e0b;"></iconify-icon></div>`;
+      } else {
+        inner = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;">
+          <iconify-icon icon="material-symbols-light:attach-file" width="22" height="22" style="color:#6b7280;"></iconify-icon></div>`;
+      }
+      return `<div class="modal-thumb" data-idx="${i}" onclick="selectModalFile(${i})">${inner}</div>`;
+    }).join('');
+
+    // Show modal, pick first file
+    document.getElementById('gallery-modal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+
+    setTimeout(() => {
+      grid.querySelectorAll('.modal-thumb-vid').forEach(v => {
+        const seek = () => { if (v.currentTime === 0) v.currentTime = 0.1; };
+        if (v.readyState >= 2) seek(); else v.addEventListener('loadeddata', seek, { once: true });
+      });
+      const firstVid = p.files.findIndex(f => fileType(f.mimetype) === 'video');
+      selectModalFile(firstVid >= 0 ? firstVid : 0);
+    }, 50);
+  }
+
+  function selectModalFile(idx) {
+    const f    = modalProject.files[idx];
+    const type = fileType(f.mimetype);
+    const url  = '/dashboard/uploads/' + f.storedName;
+    modalFileIdx = idx;
+
+    const player = document.getElementById('modal-player');
+
+    if (type === 'video') {
+      player.innerHTML = `<video controls autoplay src="${url}" style="max-width:100%;max-height:100%;display:block;"></video>`;
+    } else if (type === 'audio') {
+      player.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:20px;">
+          <div style="width:88px;height:88px;border-radius:20px;background:#f59e0b;display:flex;align-items:center;justify-content:center;">
+            <iconify-icon icon="material-symbols-light:music-note-2" width="44" height="44" style="color:#000;"></iconify-icon>
+          </div>
+          <audio controls autoplay style="width:300px;"><source src="${url}" type="${f.mimetype}"></audio>
+        </div>`;
+    } else if (type === 'image') {
+      player.innerHTML = `<img src="${url}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;" />`;
+    } else {
+      player.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+          <iconify-icon icon="material-symbols-light:attach-file" width="44" height="44" style="color:#4b5563;"></iconify-icon>
+          <span style="font-size:13px;color:#6b7280;">${f.originalName}</span>
+        </div>`;
+    }
+
+    // Info bar
+    document.getElementById('modal-info-bar').innerHTML = `
+      <div style="flex:1;min-width:0;">
+        <p style="font-size:13px;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 0 2px;">${f.originalName}</p>
+        <p style="font-size:11px;color:#6b7280;margin:0;">${sizeLabel(f.size)}</p>
+      </div>
+      <a href="${url}" download="${f.originalName}"
+        style="font-size:12px;font-weight:600;color:#f59e0b;text-decoration:none;padding:6px 14px;border-radius:9999px;border:1px solid rgba(245,158,11,0.3);white-space:nowrap;flex-shrink:0;">
+        Download
+      </a>`;
+
+    // Highlight selected thumb
+    document.querySelectorAll('.modal-thumb').forEach(el => {
+      el.classList.toggle('selected', parseInt(el.dataset.idx) === idx);
+    });
+  }
+
+  function closeModal() {
+    document.getElementById('gallery-modal').classList.remove('open');
+    document.getElementById('modal-player').innerHTML = '';
+    document.body.style.overflow = '';
+    modalProject = null;
+    modalFileIdx = null;
+  }
+
+  // ── Filter ─────────────────────────────────────────────
+  function applyFilter(type) {
+    activeFilter = type;
+    document.querySelectorAll('[data-type-filter]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.typeFilter === type);
+    });
+    document.querySelectorAll('.project-card').forEach(card => {
+      const types = (card.dataset.types || '').split(',');
+      card.style.display = (type === 'all' || types.includes(type)) ? '' : 'none';
+    });
+  }
+
+  function toggleSidebar() {
+    document.getElementById('sidebar').classList.toggle('-translate-x-full');
+    document.getElementById('sidebar-overlay').classList.toggle('hidden');
+  }
+
+  // Seek card video thumbnails to first frame
+  document.querySelectorAll('.gallery-thumb-vid').forEach(v => {
+    const seek = () => { if (v.currentTime === 0) v.currentTime = 0.1; };
+    if (v.readyState >= 2) seek();
+    else v.addEventListener('loadeddata', seek, { once: true });
+  });
+
+  // ESC closes modal
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+  </script>
+
+  <%- include('_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>
