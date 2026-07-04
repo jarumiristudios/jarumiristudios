@@ -1,5 +1,69 @@
 # Journal
 
+## 2026-07-03 — Deliverable Download: Review Fixes
+
+**What was built:** A multi-angle review of the deliverable-download feature (same day, see entry below) surfaced two real bugs and several duplication/efficiency nits, all fixed:
+
+- **Archived-booking upload blocked.** `attachCrCode` now also selects `archived` and redirects before `deliverableUpload` ever runs if the booking is archived — previously an admin could upload to an archived booking, writing into a fresh active-path folder while the real files sat under `uploads/_archive/`; restoring that booking later did a fire-and-forget `fs.rename` with no error handling, which on a platform where rename-into-an-existing-directory fails would silently leave the booking's files permanently split across both locations while the DB said `archived: false`. The "Final deliverables" upload form in `admin/booking.ejs` is now hidden (with a note to restore first) when `booking.archived`.
+- **No-op guard on status resubmission.** `POST /admin/booking/:id/status` now fetches the current status first and redirects immediately if it matches the posted one, before touching the DB or creating notifications — previously resubmitting the same status (e.g. double-clicking the active pill) re-fired both the `status_change` and `deliverable_ready` notifications every time. Same pattern already used for due-date no-op guards elsewhere in this file.
+- **Single gate predicate.** Added a `deliverablesUnlocked` virtual to `BookingRequest` (`this.status === "completed"`) and switched every place that gated deliverable visibility/download — both new download routes and all 4 views (`track.ejs`, `dashboard-booking.ejs`, `dashboard.ejs`, `admin/booking.ejs`) — to read it instead of repeating the literal status comparison 6 times. One place to update if the "done" rule ever grows beyond just `status`.
+- **Deduplicated file-serving.** Extracted `trySendStoredFile(res, crCode, type, filename)` (tries the active path, then `_archive`, returns whether it sent) and pointed all 4 file-serving routes (`/admin/uploads`, `/dashboard/uploads`, `/dashboard/deliverables`, `/track/:crCode/deliverables`) at it instead of each re-implementing the same fallback block.
+- **Deduplicated multer filename generator** (`uniqueFilename()`) shared between the client-upload and deliverable-upload `multer.diskStorage` configs.
+- **Merged the two sequential DB queries** in `/admin/uploads/:filename` into a single `findOne({ $or: [...] })` across `uploadedFiles` and `deliverableFiles`.
+
+**Left as-is:** `deliverableFiles` staying a separate array/schema from `uploadedFiles` (rather than a `source` discriminator on one array) — the review flagged this as a real ongoing cost (every files-related feature now touches two arrays/folders) but also a defensible one, since the two have genuinely different gating/exposure rules (`deliverableFiles` gated + public on `/track`, `uploadedFiles` never gated, never exposed there). Not refactored.
+
+Verified live: re-seeded a `completed` + `archived` test booking, confirmed the upload route now redirects without creating any folder or writing any file; confirmed resubmitting the same status leaves `updatedAt` untouched while a genuine status change still updates it; re-ran the full upload → `/track` render → download → admin-viewer path end to end against the consolidated helper and merged query.
+
+---
+
+## 2026-07-03 — Final Deliverable Download on `/track` + Client Dashboard
+
+**What was built:**
+
+- `BookingRequest` gained `deliverableFiles` — same shape as `uploadedFiles` (`originalName`/`storedName`/`size`/`mimetype`) plus an `uploadedAt` timestamp. A second `multer` disk storage (`deliverableStorage`/`deliverableUpload`, `server.js`) writes to `uploads/<crCode>/files/deliverables/` — a sibling of the existing `video/audio/image/other` type folders, kept as its own folder so admin-uploaded final output never mixes with client-submitted raw material in the same listing.
+- Admin gets a "Final deliverables" card on `/admin/booking/:id` — multi-file upload form (`POST /admin/booking/:id/deliverables`, via a small `attachCrCode` middleware that looks up the booking's `crCode` before `multer`'s destination callback needs it) plus a per-file "Remove" action (`/deliverables/:fileId/delete`) that deletes from disk (active and archived path) and pulls the subdocument.
+- Client-side download is gated on `booking.status === "completed"`, enforced server-side, not just hidden in the UI: `GET /track/:crCode/deliverables/:filename` (public — no session, same trust model as the rest of `/track` where the BR code itself is the bearer token) and `GET /dashboard/deliverables/:filename` (session + `clientId` ownership check) both 403 if the booking isn't completed or the file isn't attached to that booking. `/admin/uploads/:filename` was extended to also resolve `deliverableFiles` (falls back to it if the filename isn't found in `uploadedFiles`) so admin can preview/download its own uploads through the existing viewer.
+- Rendered on `/track` (new card, amber-accented, only shown once completed), `dashboard-booking.ejs` (same gate, placed above "Submitted files" since it's the thing the client actually wants once a project wraps), and a "Download" icon action on `dashboard.ejs`'s project list (links to the booking detail page rather than a single file, since there can be more than one deliverable).
+- New `Notification` type `deliverable_ready`. Fires in three places: (1) admin uploads files to a project that's already `completed`; (2) admin manually flips status to `completed` on a project that already has deliverables attached; (3) the `invoice.payment_succeeded` webhook completes a project via final payment — in that case it's folded into the existing payment-confirmed message rather than a separate notification, since one event fired one action.
+- Client hard-delete (`POST /dashboard/booking/:id/delete`) now also clears `deliverableFiles: []` alongside `uploadedFiles: []` — the underlying `files/` folder (which `hardDeleteBookingFiles()` already removed wholesale) contained both, so the DB record needs to match.
+
+**Decisions made:**
+
+- Gate is `status === "completed"`, not `finalPaymentStatus === "paid"` — they're set together by the same webhook/status-change paths today, but status is what both `/track` and the dashboard already key their "is this project done" language off of, so it's the one source of truth to check.
+- Public download route trusts the BR code alone (no extra token), matching the existing `/track` page itself — anyone who can already look up full project status and payment links via the BR code can also fetch the finished files once the project is marked done. Not a new trust boundary.
+- Deliverables aren't split into video/audio/image subfolders the way client uploads are — that split exists to make sense of bulk, uncurated client submissions; a curated admin upload is small enough to live in one flat folder.
+- Verified end-to-end against the live server: seeded a `completed` test booking, uploaded a file as admin, confirmed it rendered and downloaded correctly on `/track`, then flipped status to `in-progress` and confirmed the same download URL 403s and the UI stops rendering the section — then flipped back and confirmed the admin "Remove" action deletes the file from disk.
+
+---
+
+## 2026-07-03 — Admin Dashboard: Server-Side Search, Filter & Pagination
+
+**What was built:**
+
+- `/admin` used to load every non-archived (or archived) booking on each request and filter/search entirely client-side via `data-*` attributes on each row. Replaced with real pagination: `BookingRequest.find(filter).sort({ createdAt: -1 }).skip().limit()` at `ADMIN_PAGE_SIZE = 30` (`server.js:734`), with `page`/`totalPages` computed from a `countDocuments(filter)` on the same filter.
+- Search and status-filter moved server-side too, via query params (`q`, `field`, `status`) instead of live DOM filtering — `ADMIN_SEARCH_FIELDS` (`server.js:735`) maps a `field` param (`crCode`/`name`/`email`/`location`/`services`/`package`/`status`) to its schema path; `field: "all"` (default) `$or`s across every mapped field with a case-insensitive, regex-escaped match on `q`.
+- `views/admin/dashboard.ejs` reworked to reflect URL state on load (search box, field dropdown, and status pills all pre-filled from `q`/`field`/`statusParam`) and to navigate (not just re-render) on input — search debounces 400ms before triggering a page load; changing the field dropdown or a status pill navigates immediately. Pagination controls (prev/next + page numbers) added at the bottom of the table.
+
+**Decisions made:**
+- Went server-side now rather than waiting for it to become a problem — client-side filtering only worked because booking volume was still small enough to load every row on every `/admin` hit; that stops being true as bookings accumulate; this was already a tracked backlog item (`june26-milestone.md`).
+- 400ms debounce on the search box specifically (not the field/status controls) since typing fires far more often than a dropdown/pill click — the field and status controls navigate on every change since there's no "typing" to wait out.
+- Kept `total`/`pending` header counts computed against the full filtered set (not just the current page) via a separate `countDocuments` — `pending` in particular ignores the active filter/archived-view entirely, since it's meant as a global "needs attention" count, not a per-view one.
+
+---
+
+## 2026-07-03 — `/hire` Form UX: Brief Character Count + Mobile Upload Layout
+
+**What was built:**
+
+- Project brief textarea (`views/hire.ejs`) gained a live `X / 2000` counter (`updateBriefCount()`, fired on `oninput`) that turns amber approaching the limit and red once at it; backed by `maxlength="2000"` on the `<textarea>` and a matching server-side length check on `BookingRequest.projectBrief` in the `/hire` POST handler and the schema itself, so the limit holds even if the client-side attribute is bypassed.
+- File upload drop zone and file-list rows reworked for narrow viewports (sub-480px): drop zone padding and icon size shrink, and each file-list row now wraps filename/size onto their own line above the remove button instead of squeezing all three into one row — the remove button also got a larger tap target.
+
+**Decisions made:**
+- Enforced the 2000-char cap in three places (client `maxlength`, client counter, server validation) rather than relying on `maxlength` alone — the counter is UX (so the client sees it coming), the server check is the actual guarantee, `maxlength` is just the first line of defense.
+
+---
+
 ## 2026-07-03 — Minimum 3-Day Lead Time on Due Dates
 
 **What was built:**

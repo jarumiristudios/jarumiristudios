@@ -283,6 +283,53 @@
       <% } %>
     </div>
 
+    <% if (booking.deliverablesUnlocked && booking.deliverableFiles && booking.deliverableFiles.length > 0) { %>
+    <div class="section-card" style="border-color: rgba(245,158,11,0.2);">
+      <h2 class="text-sm font-semibold text-white mb-1 flex items-center gap-2">
+        <span>Final deliverables</span>
+        <span class="inline-flex items-center justify-center text-[11px] font-semibold text-amber-300 bg-amber-400/15 rounded-full px-2 py-0.5"><%= booking.deliverableFiles.length %></span>
+      </h2>
+      <p class="text-xs text-gray-500 mb-4">Your finished files are ready — download them below.</p>
+      <div class="space-y-2">
+        <% booking.deliverableFiles.forEach(f => {
+          const url = '/dashboard/deliverables/' + f.storedName;
+          const isImage = /^image\//i.test(f.mimetype);
+          const isVideo = /^video\//i.test(f.mimetype);
+          const isAudio = /^audio\//i.test(f.mimetype);
+          const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+        %>
+        <div class="border border-white/5 rounded-md overflow-hidden">
+          <% if (isImage) { %>
+          <a href="<%= url %>" target="_blank">
+            <img src="<%= url %>" alt="<%= f.originalName %>" class="w-full max-h-72 object-contain bg-black/40" />
+          </a>
+          <% } else if (isVideo) { %>
+          <video controls preload="metadata" class="w-full max-h-72 bg-black">
+            <source src="<%= url %>" type="<%= f.mimetype %>">
+          </video>
+          <% } else if (isAudio) { %>
+          <div class="px-3 pt-3">
+            <audio controls class="w-full">
+              <source src="<%= url %>" type="<%= f.mimetype %>">
+            </audio>
+          </div>
+          <% } %>
+          <div class="flex items-center justify-between px-3 py-2.5 gap-3">
+            <span class="text-gray-300 text-sm truncate"><%= f.originalName %></span>
+            <div class="flex items-center gap-3 shrink-0">
+              <span class="text-gray-600 text-xs"><%= sizeLabel %></span>
+              <a href="<%= url %>" download="<%= f.originalName %>"
+                class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap">
+                Download
+              </a>
+            </div>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+    </div>
+    <% } %>
+
     <% if (booking.uploadedFiles && booking.uploadedFiles.length > 0) { %>
     <div class="section-card" style="padding: 16px;">
       <button type="button" onclick="toggleCollapse('files-section')" class="w-full flex items-center justify-between gap-3 text-left cursor-pointer">

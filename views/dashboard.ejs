@@ -129,6 +129,7 @@
     .cta-btn.warn:hover   { background: rgba(245,158,11,0.15); color: #fcd34d; }
     .cta-btn.info:hover   { background: rgba(99,102,241,0.15); color: #a5b4fc; }
     .cta-btn.pay:hover    { background: rgba(34,197,94,0.15); color: #86efac; }
+    .cta-btn.download:hover { background: rgba(245,158,11,0.15); color: #fcd34d; }
 
     .projects-table tbody tr.selected { background: rgba(255,255,255,0.04); }
     .row-cb { width: 36px; padding: 0 0 0 16px; }
@@ -370,6 +371,11 @@
                   <% if (pendingInvoiceUrl) { %>
                   <a class="cta-btn pay" title="Pay now" href="<%= pendingInvoiceUrl %>" target="_blank" rel="noopener" onclick="event.stopPropagation()">
                     <iconify-icon icon="material-symbols-light:send-money" width="20" height="20"></iconify-icon>
+                  </a>
+                  <% } %>
+                  <% if (b.deliverablesUnlocked && b.deliverableFiles && b.deliverableFiles.length > 0) { %>
+                  <a class="cta-btn download" title="Download final files" href="/dashboard/booking/<%= b._id %>" onclick="event.stopPropagation()">
+                    <iconify-icon icon="material-symbols-light:download-for-offline" width="20" height="20"></iconify-icon>
                   </a>
                   <% } %>
                   <button class="cta-btn danger" title="Delete project" onclick="event.stopPropagation(); deleteProject('<%= b._id %>', '<%= b.crCode %>')">

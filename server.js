@@ -39,6 +39,8 @@ const STATUS_LABELS = {
   paused: "Paused",
 };
 
+const BOOKING_STATUSES = Object.keys(STATUS_LABELS);
+
 dotenv.config();
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -88,6 +90,9 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
             } else {
               booking.status = "completed";
               notifMsg = `Final payment confirmed for project ${booking.crCode}. Your project is complete!`;
+              if (booking.deliverableFiles?.length > 0) {
+                notifMsg += " Your final files are ready to download.";
+              }
             }
           }
           await booking.save();
@@ -156,6 +161,16 @@ function fileTypeFromMime(mimetype) {
   if (/^audio\//i.test(mimetype)) return "audio";
   if (/^image\//i.test(mimetype)) return "image";
   return "other";
+}
+
+// Checks the active uploads path, then the _archive path, for a given booking/type/filename.
+// Sends the file and returns true if found in either location; returns false otherwise (caller decides the fallback).
+function trySendStoredFile(res, crCode, type, filename) {
+  const activePath = path.join(__dirname, "uploads", crCode, "files", type, filename);
+  if (fs.existsSync(activePath)) { res.sendFile(activePath); return true; }
+  const archivePath = path.join(__dirname, "uploads", "_archive", crCode, "files", type, filename);
+  if (fs.existsSync(archivePath)) { res.sendFile(archivePath); return true; }
+  return false;
 }
 
 async function generateCrCode() {
@@ -242,6 +257,11 @@ function hardDeleteBookingFiles(crCode) {
   fs.rm(path.join(__dirname, "uploads", "_archive", crCode, "files"), { recursive: true, force: true }, () => {});
 }
 
+function uniqueFilename(originalname) {
+  const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  return `${unique}${path.extname(originalname)}`;
+}
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const type = fileTypeFromMime(file.mimetype);
@@ -249,16 +269,36 @@ const storage = multer.diskStorage({
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
-  filename: (req, file, cb) => {
-    const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-    const ext = path.extname(file.originalname);
-    cb(null, `${unique}${ext}`);
-  },
+  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
 });
 const upload = multer({
   storage,
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
 });
+
+// Admin-uploaded final deliverables — separate storage so they never mix with client-submitted raw files
+const deliverableStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, "uploads", req.crCode, "files", "deliverables");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
+});
+const deliverableUpload = multer({
+  storage: deliverableStorage,
+  limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
+});
+
+// Also blocks uploads to an archived booking — its folder lives under uploads/_archive/, not the active path,
+// so writing here before a restore would split the booking's files across both locations
+async function attachCrCode(req, res, next) {
+  const booking = await BookingRequest.findById(req.params.id).select("crCode archived");
+  if (!booking) return res.redirect("/admin");
+  if (booking.archived) return res.redirect(`/admin/booking/${req.params.id}`);
+  req.crCode = booking.crCode;
+  next();
+}
 
 // Routes
 app.get("/", (req, res) => {
@@ -274,12 +314,12 @@ app.get("/track", async (req, res) => {
     const booking = await BookingRequest.findOne({
       name: { $regex: new RegExp(`^${name?.trim()}$`, "i") },
       email: email?.trim().toLowerCase(),
-    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate createdAt");
+    }).select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
     return res.render("track", { searched: true, method: "identity", name: name?.trim(), email: email?.trim(), booking });
   }
 
   const booking = await BookingRequest.findOne({ crCode: code.toUpperCase().trim() })
-    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate createdAt");
+    .select("crCode name serviceType pricingTier budget status depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt");
   res.render("track", { searched: true, method: "code", code: code.toUpperCase().trim(), booking });
 });
 
@@ -525,7 +565,7 @@ app.get("/dashboard", requireClient, async (req, res) => {
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
     match: { filesDeleted: { $ne: true } },
-    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles agreedPrice depositStatus depositInvoiceUrl finalPaymentStatus finalInvoiceUrl projectBrief archived",
+    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles deliverableFiles agreedPrice depositStatus depositInvoiceUrl finalPaymentStatus finalInvoiceUrl projectBrief archived",
     options: { sort: { createdAt: -1 } },
   });
   if (!user) {
@@ -613,7 +653,7 @@ app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
 app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
   const booking = await BookingRequest.findOneAndUpdate(
     { _id: req.params.id, clientId: req.session.userId },
-    { filesDeleted: true, uploadedFiles: [], archived: true }
+    { filesDeleted: true, uploadedFiles: [], deliverableFiles: [], archived: true }
   );
   if (booking?.crCode) {
     hardDeleteBookingFiles(booking.crCode);
@@ -775,7 +815,7 @@ app.get("/admin", requireAdmin, async (req, res) => {
 
   res.render("admin/dashboard", {
     bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView,
-    page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam,
+    page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam, STATUS_LABELS,
   });
 });
 
@@ -785,23 +825,99 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   res.render("admin/booking", { booking, stripeError: req.query.error || null });
 });
 
+async function notifyStatusChange(bookings, newStatus) {
+  const label = STATUS_LABELS[newStatus] || newStatus;
+  const notifications = [];
+  for (const b of bookings) {
+    if (!b.clientId) continue;
+    notifications.push({
+      userId: b.clientId,
+      bookingId: b._id,
+      crCode: b.crCode,
+      type: newStatus === "declined" ? "project_dismissed" : "status_change",
+      message: newStatus === "declined"
+        ? `Project ${b.crCode} has been declined.`
+        : `Project ${b.crCode} has moved to ${label}.`,
+    });
+    if (newStatus === "completed" && b.deliverableFiles?.length > 0) {
+      notifications.push({
+        userId: b.clientId,
+        bookingId: b._id,
+        crCode: b.crCode,
+        type: "deliverable_ready",
+        message: `Your final files are ready to download for project ${b.crCode}.`,
+      });
+    }
+  }
+  if (notifications.length) await Notification.insertMany(notifications);
+}
+
 app.post("/admin/booking/:id/status", requireAdmin, async (req, res) => {
+  const existing = await BookingRequest.findById(req.params.id).select("status");
+  if (!existing) return res.redirect("/admin");
+  if (existing.status === req.body.status) return res.redirect(`/admin/booking/${req.params.id}`);
+
   const booking = await BookingRequest.findByIdAndUpdate(
     req.params.id,
     { status: req.body.status },
     { new: true }
   );
-  if (booking && booking.clientId) {
-    const label = STATUS_LABELS[req.body.status] || req.body.status;
-    await Notification.create({
-      userId: booking.clientId,
-      bookingId: booking._id,
-      crCode: booking.crCode,
-      type: req.body.status === "declined" ? "project_dismissed" : "status_change",
-      message: req.body.status === "declined"
-        ? `Project ${booking.crCode} has been declined.`
-        : `Project ${booking.crCode} has moved to ${label}.`,
-    });
+  if (booking) await notifyStatusChange([booking], req.body.status);
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/bookings/bulk-status", requireAdmin, async (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
+  const status = req.body.status;
+  if (ids.length && BOOKING_STATUSES.includes(status)) {
+    const bookings = await BookingRequest.find(
+      { _id: { $in: ids }, status: { $ne: status } },
+      "clientId crCode deliverableFiles"
+    );
+    if (bookings.length) {
+      await BookingRequest.updateMany({ _id: { $in: bookings.map((b) => b._id) } }, { status });
+      await notifyStatusChange(bookings, status);
+    }
+  }
+  res.redirect("/admin");
+});
+
+app.post("/admin/booking/:id/deliverables", requireAdmin, attachCrCode, deliverableUpload.array("files", 20), async (req, res) => {
+  const newFiles = (req.files || []).map((f) => ({
+    originalName: f.originalname,
+    storedName: f.filename,
+    size: f.size,
+    mimetype: f.mimetype,
+  }));
+  if (newFiles.length > 0) {
+    const booking = await BookingRequest.findByIdAndUpdate(
+      req.params.id,
+      { $push: { deliverableFiles: { $each: newFiles } } },
+      { new: true }
+    );
+    if (booking && booking.clientId && booking.status === "completed") {
+      await Notification.create({
+        userId: booking.clientId,
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        type: "deliverable_ready",
+        message: `Your final files are ready to download for project ${booking.crCode}.`,
+      });
+    }
+  }
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+app.post("/admin/booking/:id/deliverables/:fileId/delete", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (booking) {
+    const file = booking.deliverableFiles.id(req.params.fileId);
+    if (file) {
+      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+      fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+      booking.deliverableFiles.pull(req.params.fileId);
+      await booking.save();
+    }
   }
   res.redirect(`/admin/booking/${req.params.id}`);
 });
@@ -1137,7 +1253,10 @@ app.post("/admin/bookings/bulk-archive", requireAdmin, async (req, res) => {
 });
 
 app.post("/admin/booking/:id/restore", requireAdmin, async (req, res) => {
-  const booking = await BookingRequest.findByIdAndUpdate(req.params.id, { archived: false });
+  const booking = await BookingRequest.findOneAndUpdate(
+    { _id: req.params.id, filesDeleted: { $ne: true } },
+    { archived: false }
+  );
   if (booking?.crCode) {
     const archiveDir = path.join(__dirname, "uploads", "_archive");
     fs.rename(path.join(archiveDir, booking.crCode), path.join(__dirname, "uploads", booking.crCode), () => {});
@@ -1155,14 +1274,13 @@ app.post("/admin/booking/:id/revision/:revId/reviewed", requireAdmin, async (req
 
 app.get("/admin/uploads/:filename", requireAdmin, async (req, res) => {
   const filename = path.basename(req.params.filename);
-  const booking = await BookingRequest.findOne({ "uploadedFiles.storedName": filename });
+  const booking = await BookingRequest.findOne({
+    $or: [{ "uploadedFiles.storedName": filename }, { "deliverableFiles.storedName": filename }],
+  });
   if (booking) {
-    const fileInfo = booking.uploadedFiles.find(f => f.storedName === filename);
-    const type = fileTypeFromMime(fileInfo.mimetype);
-    const activePath = path.join(__dirname, "uploads", booking.crCode, "files", type, filename);
-    if (fs.existsSync(activePath)) return res.sendFile(activePath);
-    const archivePath = path.join(__dirname, "uploads", "_archive", booking.crCode, "files", type, filename);
-    if (fs.existsSync(archivePath)) return res.sendFile(archivePath);
+    const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
+    const type = uploadedMatch ? fileTypeFromMime(uploadedMatch.mimetype) : "deliverables";
+    if (trySendStoredFile(res, booking.crCode, type, filename)) return;
   }
   res.sendFile(path.join(__dirname, "uploads", filename));
 });
@@ -1243,11 +1361,28 @@ app.get("/dashboard/uploads/:filename", requireClient, async (req, res) => {
   if (!booking) return res.sendStatus(403);
   const fileInfo = booking.uploadedFiles.find(f => f.storedName === filename);
   const type = fileTypeFromMime(fileInfo.mimetype);
-  const activePath = path.join(__dirname, "uploads", booking.crCode, "files", type, filename);
-  if (fs.existsSync(activePath)) return res.sendFile(activePath);
-  const archivePath = path.join(__dirname, "uploads", "_archive", booking.crCode, "files", type, filename);
-  if (fs.existsSync(archivePath)) return res.sendFile(archivePath);
+  if (trySendStoredFile(res, booking.crCode, type, filename)) return;
   res.sendFile(path.join(__dirname, "uploads", filename));
+});
+
+app.get("/dashboard/deliverables/:filename", requireClient, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const booking = await BookingRequest.findOne({
+    clientId: req.session.userId,
+    "deliverableFiles.storedName": filename,
+  });
+  if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
+  if (trySendStoredFile(res, booking.crCode, "deliverables", filename)) return;
+  res.sendStatus(404);
+});
+
+app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
+  const crCode = req.params.crCode.toUpperCase().trim();
+  const filename = path.basename(req.params.filename);
+  const booking = await BookingRequest.findOne({ crCode, "deliverableFiles.storedName": filename });
+  if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
+  if (trySendStoredFile(res, booking.crCode, "deliverables", filename)) return;
+  res.sendStatus(404);
 });
 
 app.listen(PORT, () => {

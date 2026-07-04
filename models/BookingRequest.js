@@ -29,6 +29,15 @@ const bookingRequestSchema = new mongoose.Schema(
         mimetype: String,
       },
     ],
+    deliverableFiles: [
+      {
+        originalName: String,
+        storedName: String,
+        size: Number,
+        mimetype: String,
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
     status: {
       type: String,
       enum: ["pending", "in-review", "accepted", "declined", "in-progress", "completed", "paused"],
@@ -68,6 +77,13 @@ const bookingRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Single source of truth for "can the client download final deliverables yet" —
+// keep every gate (routes + views) checking this instead of a literal status string,
+// since the underlying rule (currently just status) is likely to grow conditions later.
+bookingRequestSchema.virtual("deliverablesUnlocked").get(function () {
+  return this.status === "completed";
+});
 
 bookingRequestSchema.pre("save", async function () {
   if (this.crCode) return;
