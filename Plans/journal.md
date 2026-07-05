@@ -1,5 +1,35 @@
 # Journal
 
+## 2026-07-04 — Admin Analytics Page
+
+**What was built:**
+
+- `GET /admin/analytics` (`server.js`) — the Growth-backlog "bookings per month, revenue by tier, most requested service type" item, scoped up during build into a fuller reporting page: a KPI row (total bookings, revenue collected, avg deal size, conversion rate), bookings-per-month and revenue-per-month over a `dateFrom`/`dateTo` range, revenue by pricing tier, bookings by service type, a pending → deposit-paid → completed funnel, a guest-vs-account-holder completion-rate comparison, coupon usage/discount totals, and a pipeline-status snapshot.
+- All of it comes from a single `BookingRequest.aggregate([...])` using `$facet` so the eight breakdowns share one `$match`/`$addFields` pass instead of eight round trips. `revenue` per booking is computed in `$addFields` as 30% of `agreedPrice` if `depositStatus === "paid"` plus 70% if `finalPaymentStatus === "paid"` — matches the actual deposit/final split rather than assuming a booking's full price is "revenue" the moment it's booked.
+- Date range defaults to the trailing 12 months (UTC month-aligned) if `dateFrom`/`dateTo` aren't supplied; reuses the existing `endOfDay()` helper for the upper bound, same as the `/admin` list's date filter. New `monthKeysBetween()`/`monthKeyLabel()` helpers fill in zero-count months so a quiet month shows as `0`, not a gap in the chart.
+- Pipeline-status snapshot deliberately ignores the date range (always current, unfiltered by `dateFrom`/`dateTo`) — it's a live "what's in flight right now" view, not a historical one, so it wouldn't make sense to have it disappear when filtering to a past date range.
+- Charts are plain HTML/CSS horizontal bar charts (`views/admin/analytics.ejs`) with a per-card table-toggle to see the underlying numbers — no charting library pulled in, consistent with the rest of the admin UI having no JS dependencies beyond vanilla fetch/DOM calls.
+- Linked from the `/admin` dashboard header next to Coupons/Notifications.
+
+**Decisions made:**
+- Computed revenue from `depositStatus`/`finalPaymentStatus` rather than adding a new "revenue recognized" field — the 30/70 split and paid-status fields already fully describe how much of a booking's price has actually landed.
+- Trust-tier completion-rate comparison (guest vs. account holder) added even though it wasn't in the original backlog wording, since the guest/account tiering shipped earlier today made "does tier affect follow-through" a natural, cheap-to-add question against the same aggregation.
+
+---
+
+## 2026-07-04 — Reliability: Graceful BR Code Collision Handling
+
+**What was built:**
+
+- `generateCrCode()` (`server.js`) was a `do...while` loop with no exit condition other than finding a free code — fine given the 36⁹ keyspace makes a real collision astronomically unlikely, but a bug or repeated `BookingRequest.exists()` failure had no bound and would spin forever or surface as an unhandled crash. Rewrote it as a bounded `for` loop (`CR_CODE_MAX_ATTEMPTS = 10`) that throws a plain `Error` if it exhausts its attempts without finding a free code.
+- `preCrCode` middleware now wraps the `generateCrCode()` call in try/catch: on failure it logs the error server-side and renders `hire.ejs` with a clean user-facing message ("We couldn't process your request right now. Please try again in a moment.") instead of an unhandled rejection — same render pattern (`error`/`loggedInUser: null`/`lastBooking: null`) already used by `enforceGuestSubmissionQuota`, which runs immediately before it in the same middleware chain and faces the same "body not yet parsed by multer" constraint (no `formData` to echo back).
+
+**Decisions made:**
+- 10 attempts, not a larger number — at a 36⁹-code keyspace, hitting 10 consecutive collisions organically is effectively impossible; the cap exists to bound a *pathological* failure (e.g. `exists()` erroring or a logic bug always reporting a collision), not to accommodate real collision odds.
+- Verified the retry cap in isolation (stubbed `exists()` forced to always collide → throws after exactly 10 attempts; stubbed to never collide → returns normally) and again against the real MongoDB connection with `BookingRequest.exists` monkey-patched to always return `true`, confirming the same bounded-throw behavior holds against the live DB client, not just the isolated logic.
+
+---
+
 ## 2026-07-04 — Tiered Soft Limits on `/hire` (Guest vs. Account Holder)
 
 **What was built:**
@@ -45,6 +75,8 @@ Verified against the live server: seeded booking created 2026-07-02; a `2026-07-
 - **Deduplicated file-serving.** Extracted `trySendStoredFile(res, crCode, type, filename)` (tries the active path, then `_archive`, returns whether it sent) and pointed all 4 file-serving routes (`/admin/uploads`, `/dashboard/uploads`, `/dashboard/deliverables`, `/track/:crCode/deliverables`) at it instead of each re-implementing the same fallback block.
 - **Deduplicated multer filename generator** (`uniqueFilename()`) shared between the client-upload and deliverable-upload `multer.diskStorage` configs.
 - **Merged the two sequential DB queries** in `/admin/uploads/:filename` into a single `findOne({ $or: [...] })` across `uploadedFiles` and `deliverableFiles`.
+
+Same commit also shipped the standalone **bulk status update** backlog item (`june26-milestone.md`, previously untracked in this journal): `POST /admin/bookings/bulk-status` updates every checked row via `updateMany` (skipping rows already at the target status), driven by a status dropdown next to the existing bulk-archive control on `/admin`. Notification dispatch was pulled out into a shared `notifyStatusChange(bookings, newStatus)` helper (`server.js:1137`) used by both this route and the single-booking `POST /admin/booking/:id/status`, so bulk updates fire the same `status_change`/`project_dismissed`/`deliverable_ready` notifications as a single-row change rather than a second, divergent notification path.
 
 **Left as-is:** `deliverableFiles` staying a separate array/schema from `uploadedFiles` (rather than a `source` discriminator on one array) — the review flagged this as a real ongoing cost (every files-related feature now touches two arrays/folders) but also a defensible one, since the two have genuinely different gating/exposure rules (`deliverableFiles` gated + public on `/track`, `uploadedFiles` never gated, never exposed there). Not refactored.
 

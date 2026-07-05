@@ -22,6 +22,23 @@ function endOfDay(dateStr) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// Inclusive list of "YYYY-MM" keys spanning two dates, oldest first.
+function monthKeysBetween(fromDate, toDate) {
+  const keys = [];
+  const cur = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth(), 1));
+  while (cur <= end) {
+    keys.push(`${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}`);
+    cur.setUTCMonth(cur.getUTCMonth() + 1);
+  }
+  return keys;
+}
+
+function monthKeyLabel(key) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", { month: "short", year: "2-digit", timeZone: "UTC" });
+}
+
 const MIN_DUE_DATE_LEAD_DAYS = 3;
 
 function minDueDate() {
@@ -177,16 +194,17 @@ function trySendStoredFile(res, crCode, type, filename) {
   return false;
 }
 
+const CR_CODE_MAX_ATTEMPTS = 10;
+
 async function generateCrCode() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const rand = () => Array.from({ length: 9 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  let code, exists;
-  do {
+  for (let attempt = 0; attempt < CR_CODE_MAX_ATTEMPTS; attempt++) {
     const r = rand();
-    code = `${r.slice(0, 3)}-${r.slice(3, 6)}-${r.slice(6, 9)}`;
-    exists = await BookingRequest.exists({ crCode: code });
-  } while (exists);
-  return code;
+    const code = `${r.slice(0, 3)}-${r.slice(3, 6)}-${r.slice(6, 9)}`;
+    if (!(await BookingRequest.exists({ crCode: code }))) return code;
+  }
+  throw new Error(`Failed to generate a unique BR code after ${CR_CODE_MAX_ATTEMPTS} attempts`);
 }
 
 const VISITOR_ID_COOKIE = "jrmr_vid";
@@ -233,12 +251,24 @@ async function enforceGuestSubmissionQuota(req, res, next) {
 }
 
 async function preCrCode(req, res, next) {
-  req.crCode = await generateCrCode();
-  next();
+  try {
+    req.crCode = await generateCrCode();
+    next();
+  } catch (err) {
+    console.error("preCrCode failed:", err);
+    res.render("hire", {
+      error: "We couldn't process your request right now. Please try again in a moment.",
+      loggedInUser: null,
+      lastBooking: null,
+    });
+  }
 }
 
 const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
 const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, "Censored preview": 45, "Intro/outro bumper": 75, "Extra revision": 30 };
+const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
+const SERVICE_TYPES = ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"];
+const PIPELINE_STATUS_ORDER = ["pending", "in-review", "accepted", "in-progress", "completed", "paused", "declined"];
 
 function writeBookingTxt(booking) {
   const date = booking.createdAt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -947,6 +977,150 @@ app.get("/admin", requireAdmin, async (req, res) => {
   }
 
   res.render("admin/dashboard", locals);
+});
+
+app.get("/admin/analytics", requireAdmin, async (req, res) => {
+  const dateFrom = (req.query.dateFrom || "").trim();
+  const dateTo = (req.query.dateTo || "").trim();
+
+  const defaultFrom = new Date();
+  defaultFrom.setUTCDate(1);
+  defaultFrom.setUTCHours(0, 0, 0, 0);
+  defaultFrom.setUTCMonth(defaultFrom.getUTCMonth() - 11);
+
+  const fromDate = (dateFrom && !isNaN(new Date(`${dateFrom}T00:00:00Z`).getTime()))
+    ? new Date(`${dateFrom}T00:00:00Z`)
+    : defaultFrom;
+  const toDate = endOfDay(dateTo) || new Date();
+
+  const [facetResult] = await BookingRequest.aggregate([
+    { $match: { archived: { $ne: true }, createdAt: { $gte: fromDate, $lte: toDate } } },
+    {
+      $addFields: {
+        revenue: {
+          $add: [
+            { $cond: [{ $eq: ["$depositStatus", "paid"] }, { $multiply: [{ $ifNull: ["$agreedPrice", 0] }, 0.3] }, 0] },
+            { $cond: [{ $eq: ["$finalPaymentStatus", "paid"] }, { $multiply: [{ $ifNull: ["$agreedPrice", 0] }, 0.7] }, 0] },
+          ],
+        },
+        trustGroup: { $cond: [{ $ne: ["$clientId", null] }, "account", "guest"] },
+        hasCoupon: { $cond: [{ $and: [{ $ne: ["$couponCode", null] }, { $ne: ["$couponCode", ""] }] }, 1, 0] },
+      },
+    },
+    {
+      $facet: {
+        byMonth: [
+          { $group: { _id: { $dateToString: { format: "%Y-%m", date: "$createdAt", timezone: "UTC" } }, count: { $sum: 1 }, revenue: { $sum: "$revenue" } } },
+        ],
+        byTier: [
+          { $group: { _id: "$pricingTier", revenue: { $sum: "$revenue" }, count: { $sum: 1 } } },
+        ],
+        byService: [
+          { $unwind: "$serviceType" },
+          { $group: { _id: "$serviceType", count: { $sum: 1 } } },
+        ],
+        funnel: [
+          { $group: {
+              _id: null,
+              total: { $sum: 1 },
+              depositPaid: { $sum: { $cond: [{ $eq: ["$depositStatus", "paid"] }, 1, 0] } },
+              completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+          } },
+        ],
+        byTrust: [
+          { $group: {
+              _id: "$trustGroup",
+              total: { $sum: 1 },
+              completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+          } },
+        ],
+        coupon: [
+          { $group: {
+              _id: null,
+              totalBookings: { $sum: 1 },
+              couponBookings: { $sum: "$hasCoupon" },
+              totalDiscount: { $sum: { $ifNull: ["$discountAmount", 0] } },
+          } },
+        ],
+        dealSize: [
+          { $match: { agreedPrice: { $gt: 0 } } },
+          { $group: { _id: null, avgPrice: { $avg: "$agreedPrice" } } },
+        ],
+        revenueTotal: [
+          { $group: { _id: null, total: { $sum: "$revenue" } } },
+        ],
+      },
+    },
+  ]);
+
+  const monthKeys = monthKeysBetween(fromDate, toDate);
+  const byMonthMap = new Map(facetResult.byMonth.map((r) => [r._id, r]));
+  const bookingsPerMonth = monthKeys.map((key) => ({
+    label: monthKeyLabel(key),
+    value: byMonthMap.get(key)?.count || 0,
+  }));
+  const revenuePerMonth = monthKeys.map((key) => ({
+    label: monthKeyLabel(key),
+    value: Math.round(byMonthMap.get(key)?.revenue || 0),
+  }));
+
+  const byTierMap = new Map(facetResult.byTier.map((r) => [r._id, r]));
+  const revenueByTier = PRICING_TIERS.map((tier) => ({
+    label: tier,
+    value: Math.round(byTierMap.get(tier)?.revenue || 0),
+  }));
+
+  const byServiceMap = new Map(facetResult.byService.map((r) => [r._id, r]));
+  const bookingsByService = SERVICE_TYPES.map((service) => ({
+    label: service,
+    value: byServiceMap.get(service)?.count || 0,
+  }));
+
+  const funnel = facetResult.funnel[0] || { total: 0, depositPaid: 0, completed: 0 };
+
+  const byTrustMap = new Map(facetResult.byTrust.map((r) => [r._id, r]));
+  const trustGroups = ["guest", "account"].map((g) => {
+    const row = byTrustMap.get(g) || { total: 0, completed: 0 };
+    return {
+      label: g === "guest" ? "Guest" : "Account holder",
+      total: row.total,
+      completed: row.completed,
+      rate: row.total ? Math.round((row.completed / row.total) * 100) : 0,
+    };
+  });
+
+  const couponStats = facetResult.coupon[0] || { totalBookings: 0, couponBookings: 0, totalDiscount: 0 };
+  const avgDealSize = facetResult.dealSize[0]?.avgPrice || 0;
+  const revenueCollected = Math.round(facetResult.revenueTotal[0]?.total || 0);
+
+  const pipelineRaw = await BookingRequest.aggregate([
+    { $match: { archived: { $ne: true } } },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
+  ]);
+  const pipelineMap = new Map(pipelineRaw.map((r) => [r._id, r.count]));
+  const pipelineSnapshot = PIPELINE_STATUS_ORDER.map((status) => ({
+    label: STATUS_LABELS[status] || status,
+    value: pipelineMap.get(status) || 0,
+  }));
+
+  res.render("admin/analytics", {
+    dateFrom: dateFrom || fromDate.toISOString().slice(0, 10),
+    dateTo: dateTo || toDate.toISOString().slice(0, 10),
+    kpi: {
+      totalBookings: funnel.total,
+      revenueCollected,
+      avgDealSize: Math.round(avgDealSize),
+      conversionRate: funnel.total ? Math.round((funnel.completed / funnel.total) * 100) : 0,
+    },
+    bookingsPerMonth,
+    revenuePerMonth,
+    revenueByTier,
+    bookingsByService,
+    funnel,
+    trustGroups,
+    couponStats,
+    pipelineSnapshot,
+  });
 });
 
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Analytics | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 20px; }
+
+    /* ── Stat tiles ── */
+    .stat-tile .stat-label { font-size: 12px; color: #898781; }
+    .stat-tile .stat-value { font-size: 28px; font-weight: 600; color: #fff; margin-top: 6px; font-variant-numeric: proportional-nums; }
+    .stat-tile .stat-sub { font-size: 11px; color: #6b7280; margin-top: 4px; }
+
+    /* ── Chart card chrome ── */
+    .chart-card-head { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 18px; gap: 12px; }
+    .chart-card-head h3 { font-size: 14px; font-weight: 600; color: #fff; }
+    .chart-card-sub { font-size: 11.5px; color: #6b7280; margin-top: 3px; font-family: 'Inter', sans-serif; }
+    .table-toggle {
+      flex-shrink: 0; font-size: 11.5px; color: #9ca3af; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 999px; padding: 4px 12px; background: transparent; transition: all .15s ease;
+    }
+    .table-toggle:hover { color: #fff; border-color: rgba(255,255,255,0.28); }
+    .chart-table { display: none; }
+    .chart-table.visible { display: block; }
+    .chart-viz.hidden-view { display: none; }
+    .chart-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    .chart-table th { text-align: left; color: #6b7280; font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .chart-table td { padding: 7px 8px; color: #d1d5db; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .chart-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* ── Horizontal bar chart (built in plain HTML/CSS — no chart lib) ── */
+    .hbar-chart { --label-w: 132px; --value-w: 68px; --gap: 12px; }
+    .hbar-ticks-row {
+      position: relative; height: 16px;
+      margin-left: calc(var(--label-w) + var(--gap));
+      margin-right: calc(var(--value-w) + var(--gap));
+    }
+    .hbar-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: 10.5px; color: #6b7280; white-space: nowrap; }
+    .hbar-tick:first-child { transform: translateX(0); }
+    .hbar-tick:last-child { transform: translateX(-100%); }
+    .hbar-body { display: flex; }
+    .hbar-labels, .hbar-values, .hbar-tracks { display: flex; flex-direction: column; gap: 4px; }
+    .hbar-labels { width: var(--label-w); flex-shrink: 0; }
+    .hbar-values { width: var(--value-w); flex-shrink: 0; }
+    .hbar-plot { flex: 1; position: relative; margin: 0 var(--gap); }
+    .hbar-gridlines { position: absolute; inset: 0; }
+    .hbar-gridline { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.06); }
+    .hbar-row-label, .hbar-row-value, .hbar-row-track {
+      height: 28px; display: flex; align-items: center;
+    }
+    .hbar-row-label { justify-content: flex-end; text-align: right; font-size: 12px; color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 6px; }
+    .hbar-row-value { font-size: 12px; font-weight: 600; color: #e5e7eb; font-variant-numeric: tabular-nums; }
+    .hbar-row-track { position: relative; border-radius: 6px; }
+    .hbar-fill {
+      position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+      height: 16px; background: #f59e0b; border-radius: 0 4px 4px 0;
+      transition: filter .15s ease;
+    }
+    .hbar-hit {
+      position: absolute; inset: 0; margin: -2px 0;
+    }
+    .hbar-hit:hover ~ .hbar-fill,
+    .hbar-hit:focus ~ .hbar-fill { filter: brightness(1.2); }
+    .hbar-hit:hover, .hbar-hit:focus { background: rgba(255,255,255,0.035); outline: none; }
+    .hbar-hit { border-radius: 6px; }
+
+    /* ── Shared tooltip ── */
+    #chart-tooltip {
+      position: fixed; z-index: 100; pointer-events: none; display: none;
+      background: #111; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+      padding: 6px 10px; font-size: 12px; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #chart-tooltip .tt-value { color: #fff; font-weight: 700; }
+    #chart-tooltip .tt-label { color: #9ca3af; margin-top: 1px; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="text-white text-sm font-semibold">Analytics</span>
+      </div>
+      <div class="flex items-center gap-5">
+        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Notifications
+          <% if (locals.adminUnreadCount > 0) { %>
+          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-10 space-y-8">
+
+    <!-- Title + date range -->
+    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+      <div>
+        <h1 class="text-xl font-bold text-white">Growth analytics</h1>
+        <p class="text-sm text-gray-500 mt-1">All figures below exclude archived projects. The date range scopes the KPIs and historical charts — the pipeline snapshot always reflects current, live state.</p>
+      </div>
+      <form method="GET" action="/admin/analytics" class="flex items-center gap-1.5 flex-shrink-0 bg-white/[0.04] border border-white/10 rounded-md px-3 py-2.5">
+        <input type="date" name="dateFrom" value="<%= dateFrom %>" max="<%= dateTo %>"
+          class="bg-transparent text-sm text-gray-300 focus:outline-none w-[130px]" />
+        <span class="text-gray-600 text-sm">–</span>
+        <input type="date" name="dateTo" value="<%= dateTo %>" min="<%= dateFrom %>"
+          class="bg-transparent text-sm text-gray-300 focus:outline-none w-[130px]" />
+        <button type="submit" class="text-sm text-amber-400 hover:text-amber-300 ml-1 px-2">Apply</button>
+        <a href="/admin/analytics" class="text-sm text-gray-500 hover:text-white ml-1 px-1">Reset</a>
+      </form>
+    </div>
+
+    <!-- KPI row -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div class="card stat-tile">
+        <div class="stat-label">Bookings in range</div>
+        <div class="stat-value"><%= kpi.totalBookings.toLocaleString('en-US') %></div>
+      </div>
+      <div class="card stat-tile">
+        <div class="stat-label">Revenue collected</div>
+        <div class="stat-value">$<%= kpi.revenueCollected.toLocaleString('en-US') %></div>
+        <div class="stat-sub">deposit + final payments actually received</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="stat-label">Average deal size</div>
+        <div class="stat-value">$<%= kpi.avgDealSize.toLocaleString('en-US') %></div>
+        <div class="stat-sub">among priced projects</div>
+      </div>
+      <div class="card stat-tile">
+        <div class="stat-label">Booking → completed</div>
+        <div class="stat-value"><%= kpi.conversionRate %>%</div>
+        <div class="stat-sub">of bookings in range reached "completed"</div>
+      </div>
+    </div>
+
+    <!-- Trend charts -->
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="chart-card-head">
+          <div>
+            <h3>Bookings per month</h3>
+            <div class="chart-card-sub">count of requests by month created</div>
+          </div>
+          <button type="button" class="table-toggle" data-chart="bookingsPerMonth">View as table</button>
+        </div>
+        <div class="chart-viz" id="viz-bookingsPerMonth"></div>
+        <div class="chart-table" id="tbl-bookingsPerMonth">
+          <table>
+            <thead><tr><th>Month</th><th class="num" style="text-align:right">Bookings</th></tr></thead>
+            <tbody>
+              <% bookingsPerMonth.forEach(d => { %>
+              <tr><td><%= d.label %></td><td class="num"><%= d.value %></td></tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-card-head">
+          <div>
+            <h3>Revenue per month</h3>
+            <div class="chart-card-sub">attributed to the month each project was booked, not when paid</div>
+          </div>
+          <button type="button" class="table-toggle" data-chart="revenuePerMonth">View as table</button>
+        </div>
+        <div class="chart-viz" id="viz-revenuePerMonth"></div>
+        <div class="chart-table" id="tbl-revenuePerMonth">
+          <table>
+            <thead><tr><th>Month</th><th class="num" style="text-align:right">Revenue</th></tr></thead>
+            <tbody>
+              <% revenuePerMonth.forEach(d => { %>
+              <tr><td><%= d.label %></td><td class="num">$<%= d.value.toLocaleString('en-US') %></td></tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Category charts -->
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="chart-card-head">
+          <div>
+            <h3>Revenue by tier</h3>
+            <div class="chart-card-sub">deposit + final payments received, by pricing tier</div>
+          </div>
+          <button type="button" class="table-toggle" data-chart="revenueByTier">View as table</button>
+        </div>
+        <div class="chart-viz" id="viz-revenueByTier"></div>
+        <div class="chart-table" id="tbl-revenueByTier">
+          <table>
+            <thead><tr><th>Tier</th><th class="num" style="text-align:right">Revenue</th></tr></thead>
+            <tbody>
+              <% revenueByTier.forEach(d => { %>
+              <tr><td><%= d.label %></td><td class="num">$<%= d.value.toLocaleString('en-US') %></td></tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-card-head">
+          <div>
+            <h3>Most requested service</h3>
+            <div class="chart-card-sub">bookings can request more than one service</div>
+          </div>
+          <button type="button" class="table-toggle" data-chart="bookingsByService">View as table</button>
+        </div>
+        <div class="chart-viz" id="viz-bookingsByService"></div>
+        <div class="chart-table" id="tbl-bookingsByService">
+          <table>
+            <thead><tr><th>Service</th><th class="num" style="text-align:right">Bookings</th></tr></thead>
+            <tbody>
+              <% bookingsByService.forEach(d => { %>
+              <tr><td><%= d.label %></td><td class="num"><%= d.value %></td></tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Funnel -->
+    <div class="card">
+      <div class="chart-card-head">
+        <div>
+          <h3>Booking funnel</h3>
+          <div class="chart-card-sub">
+            <% if (funnel.total) { %>
+              <%= Math.round(funnel.depositPaid / funnel.total * 100) %>% of bookings paid a deposit ·
+              <%= funnel.depositPaid ? Math.round(funnel.completed / funnel.depositPaid * 100) : 0 %>% of deposit-paid projects were completed
+            <% } else { %>
+              no bookings in range
+            <% } %>
+          </div>
+        </div>
+        <button type="button" class="table-toggle" data-chart="funnel">View as table</button>
+      </div>
+      <div class="chart-viz" id="viz-funnel"></div>
+      <div class="chart-table" id="tbl-funnel">
+        <table>
+          <thead><tr><th>Stage</th><th class="num" style="text-align:right">Bookings</th></tr></thead>
+          <tbody>
+            <tr><td>Total bookings</td><td class="num"><%= funnel.total %></td></tr>
+            <tr><td>Deposit paid</td><td class="num"><%= funnel.depositPaid %></td></tr>
+            <tr><td>Completed</td><td class="num"><%= funnel.completed %></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Guest vs account + coupon impact -->
+    <div class="grid lg:grid-cols-2 gap-6">
+      <div class="card">
+        <h3 class="mb-1">Guest vs. account holder</h3>
+        <div class="chart-card-sub mb-4">completion rate by trust tier</div>
+        <div class="grid grid-cols-2 gap-4">
+          <% trustGroups.forEach(g => { %>
+          <div class="rounded-md border border-white/8 p-4">
+            <div class="text-xs text-gray-500"><%= g.label %></div>
+            <div class="text-2xl font-semibold text-white mt-1"><%= g.rate %>%</div>
+            <div class="text-[11px] text-gray-500 mt-1"><%= g.completed %> of <%= g.total %> completed</div>
+          </div>
+          <% }) %>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="mb-1">Coupon impact</h3>
+        <div class="chart-card-sub mb-4">discounting activity in range</div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="rounded-md border border-white/8 p-4">
+            <div class="text-xs text-gray-500">Used a coupon</div>
+            <div class="text-2xl font-semibold text-white mt-1">
+              <%= couponStats.totalBookings ? Math.round(couponStats.couponBookings / couponStats.totalBookings * 100) : 0 %>%
+            </div>
+            <div class="text-[11px] text-gray-500 mt-1"><%= couponStats.couponBookings %> of <%= couponStats.totalBookings %> bookings</div>
+          </div>
+          <div class="rounded-md border border-white/8 p-4">
+            <div class="text-xs text-gray-500">Total discount given</div>
+            <div class="text-2xl font-semibold text-white mt-1">$<%= Math.round(couponStats.totalDiscount).toLocaleString('en-US') %></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pipeline snapshot (unfiltered, live) -->
+    <div class="card">
+      <div class="chart-card-head">
+        <div>
+          <h3>Current pipeline</h3>
+          <div class="chart-card-sub">live status breakdown of all active (non-archived) projects — not affected by the date range above</div>
+        </div>
+        <button type="button" class="table-toggle" data-chart="pipelineSnapshot">View as table</button>
+      </div>
+      <div class="chart-viz" id="viz-pipelineSnapshot"></div>
+      <div class="chart-table" id="tbl-pipelineSnapshot">
+        <table>
+          <thead><tr><th>Status</th><th class="num" style="text-align:right">Projects</th></tr></thead>
+          <tbody>
+            <% pipelineSnapshot.forEach(d => { %>
+            <tr><td><%= d.label %></td><td class="num"><%= d.value %></td></tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <div id="chart-tooltip"><div class="tt-value"></div><div class="tt-label"></div></div>
+
+  <script>
+    // ── Horizontal bar chart — plain HTML/CSS, single accent hue, built once and reused per chart ──
+    function niceMax(value) {
+      if (value <= 0) return 1;
+      const exp = Math.floor(Math.log10(value));
+      const base = Math.pow(10, exp);
+      const frac = value / base;
+      let niceFrac;
+      if (frac <= 1) niceFrac = 1;
+      else if (frac <= 2) niceFrac = 2;
+      else if (frac <= 2.5) niceFrac = 2.5;
+      else if (frac <= 5) niceFrac = 5;
+      else niceFrac = 10;
+      return niceFrac * base;
+    }
+
+    function formatValue(v, format) {
+      const n = Math.round(v);
+      if (format === 'currency') return '$' + n.toLocaleString('en-US');
+      if (format === 'percent') return n + '%';
+      return n.toLocaleString('en-US');
+    }
+
+    const tooltipEl = document.getElementById('chart-tooltip');
+    function showTooltip(d, format) {
+      tooltipEl.querySelector('.tt-value').textContent = formatValue(d.value, format);
+      tooltipEl.querySelector('.tt-label').textContent = d.label;
+      tooltipEl.style.display = 'block';
+    }
+    function moveTooltip(e) {
+      tooltipEl.style.left = (e.clientX + 14) + 'px';
+      tooltipEl.style.top = (e.clientY + 14) + 'px';
+    }
+    function hideTooltip() {
+      tooltipEl.style.display = 'none';
+    }
+
+    function renderHBarChart(containerId, data, opts) {
+      opts = opts || {};
+      const format = opts.format || 'count';
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const values = data.map(d => d.value);
+      const max = format === 'percent' ? 100 : niceMax(Math.max(1, ...values));
+      const tickCount = 4;
+      const ticks = Array.from({ length: tickCount + 1 }, (_, i) => (max / tickCount) * i);
+
+      container.classList.add('hbar-chart');
+      container.innerHTML = '';
+
+      const ticksRow = document.createElement('div');
+      ticksRow.className = 'hbar-ticks-row';
+      ticks.forEach(t => {
+        const tick = document.createElement('span');
+        tick.className = 'hbar-tick';
+        tick.style.left = (t / max * 100) + '%';
+        tick.textContent = formatValue(t, format === 'percent' ? 'percent' : (opts.tickFormat || format));
+        ticksRow.appendChild(tick);
+      });
+      container.appendChild(ticksRow);
+
+      const body = document.createElement('div');
+      body.className = 'hbar-body';
+
+      const labels = document.createElement('div');
+      labels.className = 'hbar-labels';
+      const plot = document.createElement('div');
+      plot.className = 'hbar-plot';
+      const gridlines = document.createElement('div');
+      gridlines.className = 'hbar-gridlines';
+      ticks.forEach(t => {
+        const line = document.createElement('div');
+        line.className = 'hbar-gridline';
+        line.style.left = (t / max * 100) + '%';
+        gridlines.appendChild(line);
+      });
+      plot.appendChild(gridlines);
+      const tracks = document.createElement('div');
+      tracks.className = 'hbar-tracks';
+      plot.appendChild(tracks);
+      const valuesCol = document.createElement('div');
+      valuesCol.className = 'hbar-values';
+
+      data.forEach(d => {
+        const labelRow = document.createElement('div');
+        labelRow.className = 'hbar-row-label';
+        labelRow.textContent = d.label; // untrusted data — textContent only
+        labelRow.title = d.label;
+        labels.appendChild(labelRow);
+
+        const trackRow = document.createElement('div');
+        trackRow.className = 'hbar-row-track';
+        const hit = document.createElement('div');
+        hit.className = 'hbar-hit';
+        hit.tabIndex = 0;
+        const fill = document.createElement('div');
+        fill.className = 'hbar-fill';
+        const pct = max ? Math.min(100, (d.value / max) * 100) : 0;
+        fill.style.width = pct + '%';
+        hit.addEventListener('mouseenter', () => showTooltip(d, format));
+        hit.addEventListener('mousemove', moveTooltip);
+        hit.addEventListener('mouseleave', hideTooltip);
+        hit.addEventListener('focus', () => showTooltip(d, format));
+        hit.addEventListener('blur', hideTooltip);
+        trackRow.appendChild(hit);
+        trackRow.appendChild(fill);
+        tracks.appendChild(trackRow);
+
+        const valueRow = document.createElement('div');
+        valueRow.className = 'hbar-row-value';
+        valueRow.textContent = formatValue(d.value, format);
+        valuesCol.appendChild(valueRow);
+      });
+
+      body.appendChild(labels);
+      body.appendChild(plot);
+      body.appendChild(valuesCol);
+      container.appendChild(body);
+    }
+
+    renderHBarChart('viz-bookingsPerMonth', <%- JSON.stringify(bookingsPerMonth) %>, { format: 'count' });
+    renderHBarChart('viz-revenuePerMonth', <%- JSON.stringify(revenuePerMonth) %>, { format: 'currency' });
+    renderHBarChart('viz-revenueByTier', <%- JSON.stringify(revenueByTier) %>, { format: 'currency' });
+    renderHBarChart('viz-bookingsByService', <%- JSON.stringify(bookingsByService) %>, { format: 'count' });
+    renderHBarChart('viz-funnel', <%- JSON.stringify([
+      { label: 'Total bookings', value: funnel.total },
+      { label: 'Deposit paid', value: funnel.depositPaid },
+      { label: 'Completed', value: funnel.completed },
+    ]) %>, { format: 'count' });
+    renderHBarChart('viz-pipelineSnapshot', <%- JSON.stringify(pipelineSnapshot) %>, { format: 'count' });
+
+    // ── Chart / table toggle ──
+    document.querySelectorAll('.table-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.chart;
+        const viz = document.getElementById('viz-' + key);
+        const tbl = document.getElementById('tbl-' + key);
+        const showingTable = tbl.classList.toggle('visible');
+        viz.classList.toggle('hidden-view', showingTable);
+        btn.textContent = showingTable ? 'View as chart' : 'View as table';
+      });
+    });
+  </script>
+
+  <%- include('../_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>
