@@ -3,17 +3,20 @@
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/admin/notifications';
   var isDashboardPage = window.location.pathname === '/admin';
+  var isMessagesPage = /^\/admin\/messages(\/|$)/.test(window.location.pathname);
 
   var ICONS = {
     nudge:       { icon: 'material-symbols-light:notifications-active', cls: 'nudge',       color: '#818cf8' },
     payment:     { icon: 'material-symbols-light:payments',             cls: 'payment',     color: '#34d399' },
     new_booking: { icon: 'material-symbols-light:post-add',             cls: 'new-booking', color: '#f59e0b' },
+    new_message: { icon: 'material-symbols-light:chat',                 cls: 'new-booking', color: '#f59e0b' },
   };
 
   var TOAST_TITLES = {
     nudge: 'New nudge',
     payment: 'Payment received',
     new_booking: 'New booking',
+    new_message: 'New message',
   };
 
   function updateBadge(count) {
@@ -33,11 +36,27 @@
     }
   }
 
+  function updateMessagesBadge(count) {
+    var link = document.querySelector('a[href="/admin/messages"]');
+    if (!link) return;
+    var badge = link.querySelector('span');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;';
+        link.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
   function buildRow(n) {
     var ic = ICONS[n.type] || ICONS.nudge;
-    var viewLink = n.bookingId
-      ? '<a href="/admin/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
-      : '';
+    var viewLink = !n.bookingId ? '' : n.type === 'new_message'
+      ? '<a href="/admin/messages/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">Open chat →</a>'
+      : '<a href="/admin/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>';
     var row = document.createElement('div');
     row.className = 'notif-row unread';
     row.innerHTML =
@@ -80,18 +99,25 @@
       lastSeen = data.now;
 
       updateBadge(data.unreadCount);
+      updateMessagesBadge(data.adminUnreadMessageCount);
 
       if (!data.items.length) return;
+
+      var activeBookingMatch = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
+      var activeBookingId = activeBookingMatch ? activeBookingMatch[1] : null;
+      var toastable = data.items.filter(function (n) {
+        return !(n.type === 'new_message' && String(n.bookingId) === activeBookingId);
+      });
 
       if (isNotifPage) {
         prependToList(data.items);
         fetch('/api/admin/notifications/mark-read', { method: 'POST' });
         updateBadge(0);
-        data.items.forEach(function (n) {
+        toastable.forEach(function (n) {
           if (typeof showToast === 'function') showToast(TOAST_TITLES[n.type] || 'New nudge', n.message, 'info');
         });
       } else if (typeof showToast === 'function') {
-        data.items.forEach(function (n) {
+        toastable.forEach(function (n) {
           showToast(TOAST_TITLES[n.type] || 'New nudge', n.message, 'info');
         });
       }
@@ -99,6 +125,10 @@
       if (isDashboardPage && typeof fetchAndRender === 'function'
           && data.items.some(function (n) { return n.type === 'new_booking'; })) {
         fetchAndRender(location.href, false);
+      }
+
+      if (isMessagesPage && data.items.some(function (n) { return n.type === 'new_message' && String(n.bookingId) !== activeBookingId; })) {
+        location.reload();
       }
     } catch {}
   }

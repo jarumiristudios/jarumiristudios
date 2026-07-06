@@ -84,6 +84,12 @@
         <span class="text-white font-semibold text-sm">Coupons</span>
       </div>
       <div class="flex items-center gap-5">
+        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Messages
+          <% if (locals.adminUnreadMessageCount > 0) { %>
+          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
+          <% } %>
+        </a>
         <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
           Notifications
           <% if (locals.adminUnreadCount > 0) { %>

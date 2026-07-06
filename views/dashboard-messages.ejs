@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= typeof booking !== 'undefined' && booking ? booking.crCode + ' · ' : '' %>Messages | Jarumiri Studios</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, .brand { font-family: 'Syne', sans-serif; }
+
+    .sidebar-link {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; min-height: 40px; border-radius: 6px;
+      font-size: 13.5px; color: #6b7280; font-weight: 500;
+      text-decoration: none; transition: all 0.15s;
+    }
+    .sidebar-link:hover { color: #e5e7eb; background: rgba(255,255,255,0.045); }
+    .sidebar-link.active { color: #fff; background: rgba(255,255,255,0.07); }
+    .sidebar-link.danger:hover { color: #f87171; background: rgba(239,68,68,0.06); }
+    .unread-badge {
+      display: flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9999px;
+      background: #f59e0b; color: #000; font-size: 10px; font-weight: 700;
+    }
+
+    .messenger { display: flex; height: calc(100vh - 56px); }
+    @media (min-width: 1024px) { .messenger { height: 100vh; } }
+
+    .chat-list-col { width: 300px; flex-shrink: 0; border-right: 1px solid rgba(255,255,255,0.05); overflow-y: auto; }
+    .thread-panel-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    @media (max-width: 1023px) {
+      .messenger.thread-active .chat-list-col { display: none; }
+      .messenger:not(.thread-active) .thread-panel-col { display: none; }
+    }
+
+    .thread-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .thread-row:hover { background: rgba(255,255,255,0.03); }
+    .thread-row.active { background: rgba(245,158,11,0.06); }
+    .thread-icon {
+      width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.2);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .bubble-row { display: flex; margin-bottom: 6px; }
+    .bubble-row.mine { justify-content: flex-end; }
+    .bubble-col { max-width: 70%; }
+    .bubble {
+      width: fit-content;
+      max-width: 100%;
+      min-width: 96px;
+      padding: 11px 16px;
+      border-radius: 14px;
+      font-size: 14.5px;
+      line-height: 1.55;
+      word-wrap: break-word;
+    }
+    .bubble-row.theirs .bubble { background: rgba(255,255,255,0.06); color: #e5e7eb; border-bottom-left-radius: 3px; }
+    .bubble-row.mine .bubble { background: #f59e0b; color: #000; border-bottom-right-radius: 3px; }
+    .bubble-time { font-size: 11px; margin-top: 4px; display: flex; align-items: center; gap: 4px; }
+    .bubble-time-text { opacity: 0.65; }
+    .bubble-row.mine .bubble-time { justify-content: flex-end; }
+    .tick { opacity: 1; color: rgba(0,0,0,0.55); }
+    .tick-read { color: #1d4ed8; }
+
+    .attachment-chip {
+      display: flex; align-items: center; gap: 9px;
+      padding: 10px 12px; border-radius: 9px;
+      background: rgba(0,0,0,0.15);
+      text-decoration: none; margin-top: 7px;
+    }
+    .bubble-row.theirs .attachment-chip { background: rgba(0,0,0,0.25); color: #e5e7eb; }
+    .bubble-row.mine .attachment-chip { background: rgba(0,0,0,0.12); color: #000; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased">
+
+  <!-- Mobile top bar -->
+  <header class="lg:hidden fixed top-0 left-0 right-0 z-50 h-14 bg-[#0d0d0d] border-b border-white/5 flex items-center justify-between px-4">
+    <span class="brand text-[15px] font-bold text-white">Jarumiri<span class="text-amber-400">.</span></span>
+    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-white transition-colors p-1.5">
+      <iconify-icon icon="material-symbols-light:menu" width="22" height="22"></iconify-icon>
+    </button>
+  </header>
+
+  <div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-30 hidden" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed top-0 left-0 h-screen w-55 bg-[#0d0d0d] border-r border-white/5 z-40 flex flex-col -translate-x-full lg:translate-x-0 transition-transform duration-200">
+    <div class="h-16.25 flex items-center px-5 border-b border-white/5 shrink-0">
+      <span class="brand text-[15px] font-bold text-white">Jarumiri Studios<span class="text-amber-400">.</span></span>
+    </div>
+
+    <nav class="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      <a href="/dashboard" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:grid-view" width="20" height="20"></iconify-icon>
+        Overview
+      </a>
+      <a href="/dashboard/gallery" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:photo-library" width="20" height="20"></iconify-icon>
+        Gallery
+      </a>
+      <a href="/dashboard/messages" class="sidebar-link active">
+        <iconify-icon icon="material-symbols-light:chat" width="20" height="20"></iconify-icon>
+        <span class="flex-1">Messages</span>
+        <% if (locals.unreadMessageCount > 0) { %>
+        <span class="unread-badge"><%= unreadMessageCount %></span>
+        <% } %>
+      </a>
+      <a href="/dashboard/notifications" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:notifications" width="20" height="20"></iconify-icon>
+        <span class="flex-1">Notifications</span>
+        <% if (locals.unreadCount > 0) { %>
+        <span class="unread-badge"><%= unreadCount %></span>
+        <% } %>
+      </a>
+      <a href="/dashboard/invoices" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:receipt-long-outline" width="20" height="20"></iconify-icon>
+        Invoices
+      </a>
+      <a href="/dashboard/account" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:person" width="20" height="20"></iconify-icon>
+        Account
+      </a>
+    </nav>
+
+    <div class="px-3 pb-4 border-t border-white/5 shrink-0 space-y-1">
+      <a href="/dashboard/new"
+        class="flex items-center gap-2.5 w-full px-3 min-h-10 rounded-md bg-amber-400 text-black text-[13.5px] font-bold hover:bg-amber-300 transition-colors">
+        <iconify-icon icon="material-symbols-light:add" width="20" height="20"></iconify-icon>
+        New project
+      </a>
+      <a href="https://t.me/jarumiri" target="_blank" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:forum" width="20" height="20"></iconify-icon>
+        Support
+      </a>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="lg:ml-55">
+    <div class="lg:hidden h-14"></div>
+
+    <div id="messenger" class="messenger <%= typeof booking !== 'undefined' && booking ? 'thread-active' : '' %>">
+      <!-- Chat list column -->
+      <div class="chat-list-col">
+        <% if (!threads || threads.length === 0) { %>
+        <div class="text-center py-16 px-4">
+          <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
+            <iconify-icon icon="material-symbols-light:chat" width="22" height="22" class="text-gray-700"></iconify-icon>
+          </div>
+          <p class="text-gray-600 text-sm">No projects yet.</p>
+          <a href="/dashboard/new" class="text-amber-400 text-sm hover:text-amber-300 transition-colors font-medium mt-1 inline-block">Start a project →</a>
+        </div>
+        <% } else { %>
+        <% threads.forEach(t => {
+          const isActive = typeof booking !== 'undefined' && booking && String(booking._id) === String(t.booking._id);
+        %>
+        <a href="/dashboard/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>">
+          <div class="thread-icon">
+            <iconify-icon icon="material-symbols-light:chat" width="15" height="15" style="color:#f59e0b"></iconify-icon>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-amber-400 text-xs font-semibold"><%= t.booking.crCode %></span>
+            </div>
+            <p class="text-sm text-gray-300 mt-0.5 truncate">
+              <% if (t.lastMessage) { %>
+                <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.body || (t.lastMessage.attachment ? '📎 ' + t.lastMessage.attachment.originalName : '') %>
+              <% } else { %>
+                <span class="text-gray-700">Say hello.</span>
+              <% } %>
+            </p>
+          </div>
+          <% if (t.unreadCount > 0) { %>
+          <span class="unread-badge"><%= t.unreadCount %></span>
+          <% } %>
+        </a>
+        <% }) %>
+        <% } %>
+      </div>
+
+      <!-- Thread panel -->
+      <div id="thread-panel" class="thread-panel-col">
+        <% if (typeof booking !== 'undefined' && booking) { %>
+        <%- include('_message-thread-panel', { booking, messages, myRole: 'client', attachmentBasePath: '/dashboard/messages/attachments', postPath: '/dashboard/messages/' + booking._id }) %>
+        <% } else { %>
+        <div class="flex-1 flex items-center justify-center text-center px-6">
+          <div>
+            <div class="w-11 h-11 rounded-md bg-white/3 border border-white/8 flex items-center justify-center mx-auto mb-4">
+              <iconify-icon icon="material-symbols-light:chat" width="22" height="22" class="text-gray-700"></iconify-icon>
+            </div>
+            <p class="text-gray-600 text-sm">Select a conversation.</p>
+          </div>
+        </div>
+        <% } %>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('-translate-x-full');
+      document.getElementById('sidebar-overlay').classList.toggle('hidden');
+    }
+  </script>
+  <%- include('_message-thread-script', { booking: typeof booking !== 'undefined' ? booking : null }) %>
+  <%- include('_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>

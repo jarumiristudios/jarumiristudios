@@ -7,12 +7,15 @@ const crypto = require("crypto");
 const multer = require("multer");
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
+const http = require("http");
+const { Server } = require("socket.io");
 const { MongoStore } = require("connect-mongo");
 const BookingRequest = require("./models/BookingRequest");
 const User = require("./models/User");
 const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
 const AdminNotification = require("./models/AdminNotification");
+const Message = require("./models/Message");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
@@ -105,6 +108,8 @@ dotenv.config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer);
 const PORT = process.env.PORT || 3000;
 
 // View engine
@@ -197,13 +202,16 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 app.use(cookieParser());
 app.use(assignVisitorId);
-app.use(session({
+const sessionMiddleware = session({
   secret: process.env.SESSION_SECRET || "jarumiri-dev-secret",
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({ mongoUrl: process.env.MONGO_URI }),
   cookie: { maxAge: 8 * 60 * 60 * 1000 }, // 8 hours
-}));
+});
+app.use(sessionMiddleware);
+// Shares the same express-session with Socket.IO so a socket's handshake carries req.session
+io.engine.use(sessionMiddleware);
 
 const requireAdmin = (req, res, next) => {
   if (req.session.isAdmin) return next();
@@ -214,6 +222,30 @@ const requireClient = (req, res, next) => {
   if (req.session.userId) return next();
   res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
 };
+
+function chatRoom(bookingId) {
+  return `project:${bookingId}`;
+}
+
+// Project chat — a socket only ever represents one project's thread (opened from either
+// /dashboard/messages/:id or /admin/booking/:id), so authorization happens once at connect
+// time rather than per-event. Sending still goes through normal HTTP POST routes below (multer
+// needs a real request); this socket is push-only, used to broadcast those saved messages live.
+io.on("connection", async (socket) => {
+  const session = socket.request.session;
+  const bookingId = socket.handshake.query.bookingId;
+  if (!bookingId) return socket.disconnect(true);
+
+  let authorized = false;
+  if (session?.isAdmin) {
+    authorized = await BookingRequest.exists({ _id: bookingId });
+  } else if (session?.userId) {
+    authorized = await BookingRequest.exists({ _id: bookingId, clientId: session.userId });
+  }
+  if (!authorized) return socket.disconnect(true);
+
+  socket.join(chatRoom(bookingId));
+});
 
 // Database
 mongoose
@@ -390,6 +422,12 @@ function notifyAdminNewBooking(booking) {
   }).catch((err) => console.error("Error creating admin new-booking notification:", err.message));
 }
 
+function messagePreview(body, attachment) {
+  if (body) return body.length > 60 ? body.slice(0, 60) + "…" : body;
+  if (attachment) return "📎 " + attachment.originalName;
+  return "";
+}
+
 // Permanently removes uploaded media for a booking while keeping booking.txt as a record
 function hardDeleteBookingFiles(crCode) {
   if (!crCode) return;
@@ -473,6 +511,23 @@ const deliverableUpload = multer({
   fileFilter: rejectDangerousFiles,
 });
 
+// Chat attachments — quick references/previews, not raw footage delivery (that's what the
+// main upload system above is for), so a smaller cap than member uploads.
+const CHAT_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const chatStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join(__dirname, "uploads", req.crCode, "files", "chat");
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
+});
+const chatUpload = multer({
+  storage: chatStorage,
+  limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
+  fileFilter: restrictToAllowedMediaTypes,
+});
+
 // Also blocks uploads to an archived booking — its folder lives under uploads/_archive/, not the active path,
 // so writing here before a restore would split the booking's files across both locations
 async function attachCrCode(req, res, next) {
@@ -480,6 +535,17 @@ async function attachCrCode(req, res, next) {
   if (!booking) return res.redirect("/admin");
   if (booking.archived) return res.redirect(`/admin/booking/${req.params.id}`);
   req.crCode = booking.crCode;
+  next();
+}
+
+// Client-side equivalent of attachCrCode above — also verifies the booking belongs to the
+// logged-in client before any multer disk write happens.
+async function attachCrCodeForClient(req, res, next) {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived clientId name");
+  if (!booking) return res.sendStatus(403);
+  if (booking.archived) return res.sendStatus(403);
+  req.crCode = booking.crCode;
+  req.booking = booking;
   next();
 }
 
@@ -758,9 +824,11 @@ app.post("/signup", async (req, res) => {
 // Inject unread notification count into all /dashboard views
 app.use("/dashboard", async (req, res, next) => {
   res.locals.unreadCount = 0;
+  res.locals.unreadMessageCount = 0;
   if (req.session.userId) {
     try {
       res.locals.unreadCount = await Notification.countDocuments({ userId: req.session.userId, read: false });
+      res.locals.unreadMessageCount = await Message.countDocuments({ clientId: req.session.userId, senderRole: "admin", read: false });
     } catch {}
   }
   next();
@@ -928,9 +996,11 @@ app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
 // Inject unread admin notification count into all /admin views
 app.use("/admin", async (req, res, next) => {
   res.locals.adminUnreadCount = 0;
+  res.locals.adminUnreadMessageCount = 0;
   if (req.session.isAdmin) {
     try {
       res.locals.adminUnreadCount = await AdminNotification.countDocuments({ read: false });
+      res.locals.adminUnreadMessageCount = await Message.countDocuments({ senderRole: "client", read: false });
     } catch {}
   }
   next();
@@ -962,13 +1032,14 @@ app.get("/admin/notifications", requireAdmin, async (req, res) => {
 
 app.get("/api/admin/notifications/poll", requireAdmin, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const [unreadCount, items] = await Promise.all([
+  const [unreadCount, adminUnreadMessageCount, items] = await Promise.all([
     AdminNotification.countDocuments({ read: false }),
+    Message.countDocuments({ senderRole: "client", read: false }),
     since
       ? AdminNotification.find({ createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
       : [],
   ]);
-  res.json({ unreadCount, items, now: Date.now() });
+  res.json({ unreadCount, adminUnreadMessageCount, items, now: Date.now() });
 });
 
 app.post("/api/admin/notifications/mark-read", requireAdmin, async (req, res) => {
@@ -1028,10 +1099,14 @@ app.get("/admin", requireAdmin, async (req, res) => {
     .skip((page - 1) * ADMIN_PAGE_SIZE)
     .limit(ADMIN_PAGE_SIZE);
 
+  const unreadMessageBookingIds = new Set(
+    (await Message.find({ senderRole: "client", read: false }).distinct("bookingId")).map(String)
+  );
+
   const locals = {
     bookings, total, pending, TIER_PRICES, ADDON_PRICES, archivedView,
     page, totalPages, pageSize: ADMIN_PAGE_SIZE, q, field, statusParam, STATUS_LABELS,
-    dateFrom, dateTo,
+    dateFrom, dateTo, unreadMessageBookingIds,
   };
 
   if (req.xhr) {
@@ -1195,8 +1270,12 @@ app.get("/admin/analytics", requireAdmin, async (req, res) => {
 app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking) return res.redirect("/admin");
+  const bookingUnreadMessageCount = booking.clientId
+    ? await Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false })
+    : 0;
   res.render("admin/booking", {
     booking,
+    bookingUnreadMessageCount,
     statusGate: getStatusGate(booking.status),
     statusGateHints: STATUS_GATE_HINTS,
     statusGateTerminalHint: STATUS_GATE_TERMINAL_HINT,
@@ -1205,6 +1284,96 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
     deliverError: req.query.deliverError || null,
     delivered: req.query.delivered ? parseInt(req.query.delivered, 10) : null,
   });
+});
+
+app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => {
+  const booking = await BookingRequest.findById(req.params.id).select("crCode archived clientId");
+  if (!booking) return res.status(404).json({ error: "Project not found." });
+  if (booking.archived) return res.status(403).json({ error: "This project is archived." });
+  if (!booking.clientId) return res.status(400).json({ error: "This project has no linked client account." });
+  req.crCode = booking.crCode;
+  req.booking = booking;
+  next();
+}, (req, res, next) => {
+  chatUpload.single("attachment")(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
+  const body = (req.body.body || "").trim();
+  if (!body && !req.file) return res.status(400).json({ error: "Message can't be empty." });
+
+  const message = await Message.create({
+    bookingId: req.params.id,
+    crCode: req.booking.crCode,
+    clientId: req.booking.clientId,
+    senderRole: "admin",
+    body,
+    attachment: req.file ? {
+      originalName: req.file.originalname,
+      storedName: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    } : undefined,
+  });
+
+  io.to(chatRoom(req.params.id)).emit("new-message", message);
+  res.json({ message });
+
+  Notification.create({
+    userId: req.booking.clientId,
+    bookingId: req.params.id,
+    crCode: req.booking.crCode,
+    type: "new_message",
+    message: `New message on ${req.booking.crCode}: "${messagePreview(body, message.attachment)}"`,
+  }).catch((err) => console.error("Error creating client new-message notification:", err.message));
+});
+
+async function adminMessageThreads() {
+  const bookings = await BookingRequest.find({ clientId: { $ne: null } })
+    .select("crCode name serviceType status archived createdAt")
+    .sort({ createdAt: -1 });
+  return Promise.all(bookings.map(async (booking) => {
+    const [lastMessage, unreadCount] = await Promise.all([
+      Message.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }),
+      Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false }),
+    ]);
+    return { booking, lastMessage, unreadCount };
+  }));
+}
+
+app.get("/admin/messages", requireAdmin, async (req, res) => {
+  const threads = await adminMessageThreads();
+  res.render("admin/messages", { threads });
+});
+
+app.get("/admin/messages/:id", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: { $ne: null } });
+  if (!booking) return res.redirect("/admin/messages");
+  const messages = await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 });
+  await Promise.all([
+    Message.updateMany({ bookingId: booking._id, senderRole: "client", read: false }, { read: true }),
+    AdminNotification.updateMany({ bookingId: booking._id, type: "new_message", read: false }, { read: true }),
+  ]);
+
+  if (req.xhr) {
+    return res.render("admin/_message-thread-panel", {
+      booking, messages, myRole: "admin",
+      attachmentBasePath: "/admin/messages/attachments",
+      postPath: `/admin/booking/${booking._id}/messages`,
+    });
+  }
+
+  const threads = await adminMessageThreads();
+  res.render("admin/messages", { threads, booking, messages });
+});
+
+app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({ "attachment.storedName": filename });
+  if (!message) return res.sendStatus(404);
+  if (trySendStoredFile(res, message.crCode, "chat", filename)) return;
+  res.sendStatus(404);
 });
 
 async function notifyStatusChange(bookings, newStatus) {
@@ -1719,15 +1888,105 @@ app.post("/dashboard/notifications/mark-all-read", requireClient, async (req, re
   res.redirect("/dashboard/notifications");
 });
 
+// ── Client project chat ──
+
+async function clientMessageThreads(userId) {
+  const user = await User.findById(userId).populate({
+    path: "bookings",
+    select: "crCode serviceType pricingTier status archived createdAt",
+    options: { sort: { createdAt: -1 } },
+  });
+  if (!user) return null;
+  const activeBookings = (user.bookings || []).filter((booking) => !booking.archived);
+  const threads = await Promise.all(activeBookings.map(async (booking) => {
+    const [lastMessage, unreadCount] = await Promise.all([
+      Message.findOne({ bookingId: booking._id }).sort({ createdAt: -1 }),
+      Message.countDocuments({ bookingId: booking._id, senderRole: "admin", read: false }),
+    ]);
+    return { booking, lastMessage, unreadCount };
+  }));
+  return threads;
+}
+
+app.get("/dashboard/messages", requireClient, async (req, res) => {
+  const threads = await clientMessageThreads(req.session.userId);
+  if (threads === null) { req.session.destroy(() => res.redirect("/login")); return; }
+  res.render("dashboard-messages", { threads });
+});
+
+app.get("/dashboard/messages/:id", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId });
+  if (!booking) return res.redirect("/dashboard/messages");
+  const messages = await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 });
+  await Promise.all([
+    Message.updateMany({ bookingId: booking._id, senderRole: "admin", read: false }, { read: true }),
+    Notification.updateMany({ bookingId: booking._id, type: "new_message", read: false }, { read: true }),
+  ]);
+
+  if (req.xhr) {
+    return res.render("_message-thread-panel", {
+      booking, messages, myRole: "client",
+      attachmentBasePath: "/dashboard/messages/attachments",
+      postPath: `/dashboard/messages/${booking._id}`,
+    });
+  }
+
+  const threads = await clientMessageThreads(req.session.userId);
+  res.render("dashboard-messages", { threads, booking, messages });
+});
+
+app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, res, next) => {
+  chatUpload.single("attachment")(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
+  const body = (req.body.body || "").trim();
+  if (!body && !req.file) return res.status(400).json({ error: "Message can't be empty." });
+
+  const message = await Message.create({
+    bookingId: req.params.id,
+    crCode: req.booking.crCode,
+    clientId: req.booking.clientId,
+    senderRole: "client",
+    body,
+    attachment: req.file ? {
+      originalName: req.file.originalname,
+      storedName: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    } : undefined,
+  });
+
+  io.to(chatRoom(req.params.id)).emit("new-message", message);
+  res.json({ message });
+
+  AdminNotification.create({
+    bookingId: req.params.id,
+    crCode: req.booking.crCode,
+    type: "new_message",
+    message: `New message from ${req.booking.name} (${req.booking.crCode}): "${messagePreview(body, message.attachment)}"`,
+  }).catch((err) => console.error("Error creating admin new-message notification:", err.message));
+});
+
+app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({ clientId: req.session.userId, "attachment.storedName": filename });
+  if (!message) return res.sendStatus(403);
+  if (trySendStoredFile(res, message.crCode, "chat", filename)) return;
+  res.sendStatus(404);
+});
+
 app.get("/api/notifications/poll", requireClient, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const [unreadCount, items] = await Promise.all([
+  const [unreadCount, unreadMessageCount, items] = await Promise.all([
     Notification.countDocuments({ userId: req.session.userId, read: false }),
+    Message.countDocuments({ clientId: req.session.userId, senderRole: "admin", read: false }),
     since
       ? Notification.find({ userId: req.session.userId, createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
       : [],
   ]);
-  res.json({ unreadCount, items, now: Date.now() });
+  res.json({ unreadCount, unreadMessageCount, items, now: Date.now() });
 });
 
 app.post("/api/notifications/mark-read", requireClient, async (req, res) => {
@@ -1788,6 +2047,6 @@ app.use((err, req, res, next) => {
   res.status(500).send("Something went wrong. Please go back and try again.");
 });
 
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

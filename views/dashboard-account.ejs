@@ -125,6 +125,13 @@
         <iconify-icon icon="material-symbols-light:photo-library" width="20" height="20"></iconify-icon>
         Gallery
       </a>
+      <a href="/dashboard/messages" class="sidebar-link">
+        <iconify-icon icon="material-symbols-light:chat" width="20" height="20"></iconify-icon>
+        <span class="flex-1">Messages</span>
+        <% if (locals.unreadMessageCount > 0) { %>
+        <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;"><%= unreadMessageCount %></span>
+        <% } %>
+      </a>
       <a href="/dashboard/notifications" class="sidebar-link">
         <iconify-icon icon="material-symbols-light:notifications" width="20" height="20"></iconify-icon>
         <span class="flex-1">Notifications</span>

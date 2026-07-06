@@ -4,7 +4,7 @@ const adminNotificationSchema = new mongoose.Schema(
   {
     bookingId: { type: mongoose.Schema.Types.ObjectId, ref: "BookingRequest" },
     crCode: { type: String },
-    type: { type: String, enum: ["nudge", "payment", "new_booking"], required: true },
+    type: { type: String, enum: ["nudge", "payment", "new_booking", "new_message"], required: true },
     message: { type: String, required: true },
     read: { type: Boolean, default: false },
   },

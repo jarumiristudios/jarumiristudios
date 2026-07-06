@@ -2,6 +2,7 @@
 (function () {
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/dashboard/notifications';
+  var isMessagesPage = /^\/dashboard\/messages(\/|$)/.test(window.location.pathname);
   var bookingPageMatch = window.location.pathname.match(/^\/dashboard\/booking\/([a-f0-9]+)$/);
   var currentBookingId = bookingPageMatch ? bookingPageMatch[1] : null;
 
@@ -12,10 +13,11 @@
     due_date_updated:  { icon: 'material-symbols-light:calendar-clock', cls: 'invoice', color: '#f59e0b' },
     due_date_reminder: { icon: 'material-symbols-light:alarm',          cls: 'invoice', color: '#f59e0b' },
     deliverable_ready: { icon: 'material-symbols-light:download-for-offline', cls: 'payment', color: '#34d399' },
+    new_message:       { icon: 'material-symbols-light:chat',          cls: 'invoice', color: '#f59e0b' },
   };
 
-  function updateBadge(count) {
-    var link = document.querySelector('a[href="/dashboard/notifications"]');
+  function updateLinkBadge(href, count) {
+    var link = document.querySelector('a[href="' + href + '"]');
     if (!link) return;
     var badge = link.querySelector('span:not(.flex-1)');
     if (count > 0) {
@@ -30,11 +32,19 @@
     }
   }
 
+  function updateBadge(count) {
+    updateLinkBadge('/dashboard/notifications', count);
+  }
+
+  function updateMessagesBadge(count) {
+    updateLinkBadge('/dashboard/messages', count);
+  }
+
   function buildRow(n) {
     var ic = ICONS[n.type] || { icon: 'material-symbols-light:close-small', cls: 'dismiss', color: '#f87171' };
-    var viewLink = n.bookingId
-      ? '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>'
-      : '';
+    var viewLink = !n.bookingId ? '' : n.type === 'new_message'
+      ? '<a href="/dashboard/messages/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">Open chat →</a>'
+      : '<a href="/dashboard/booking/' + n.bookingId + '" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>';
     var row = document.createElement('div');
     row.className = 'notif-row unread';
     row.innerHTML =
@@ -78,6 +88,7 @@
       lastSeen = data.now;
 
       updateBadge(data.unreadCount);
+      updateMessagesBadge(data.unreadMessageCount);
 
       if (!data.items.length) return;
 
@@ -89,17 +100,27 @@
         return;
       }
 
+      var activeBookingMatch = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
+      var activeBookingId = activeBookingMatch ? activeBookingMatch[1] : null;
+      var toastable = data.items.filter(function (n) {
+        return !(n.type === 'new_message' && String(n.bookingId) === activeBookingId);
+      });
+
       if (isNotifPage) {
         prependToList(data.items);
         fetch('/api/notifications/mark-read', { method: 'POST' });
         updateBadge(0);
-        data.items.forEach(function (n) {
+        toastable.forEach(function (n) {
           if (typeof showToast === 'function') showToast('New notification', n.message, 'info');
         });
       } else if (typeof showToast === 'function') {
-        data.items.forEach(function (n) {
+        toastable.forEach(function (n) {
           showToast('New notification', n.message, 'info');
         });
+      }
+
+      if (isMessagesPage && data.items.some(function (n) { return n.type === 'new_message' && String(n.bookingId) !== activeBookingId; })) {
+        location.reload();
       }
     } catch {}
   }

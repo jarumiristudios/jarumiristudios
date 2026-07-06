@@ -129,7 +129,12 @@
           </div>
           <% } %>
         </td>
-        <td class="px-5 py-4 font-mono text-amber-400 font-semibold text-xs whitespace-nowrap"><%= b.crCode %></td>
+        <td class="px-5 py-4 font-mono text-amber-400 font-semibold text-xs whitespace-nowrap">
+          <%= b.crCode %>
+          <% if (locals.unreadMessageBookingIds && unreadMessageBookingIds.has(b._id.toString())) { %>
+          <span title="Unread client message" style="display:inline-block;width:7px;height:7px;border-radius:9999px;background:#f59e0b;margin-left:5px;vertical-align:middle;"></span>
+          <% } %>
+        </td>
         <td class="px-5 py-4">
           <p class="text-white font-medium"><%= b.name %></p>
           <p class="text-gray-500 text-xs mt-0.5"><%= b.email %></p>

@@ -1,0 +1,145 @@
+<script>
+(function () {
+  var messenger = document.getElementById('messenger');
+  var panel = document.getElementById('thread-panel');
+  var currentSocket = null;
+
+  function scrollToBottom() {
+    var list = document.getElementById('message-list');
+    if (list) list.scrollTop = list.scrollHeight;
+  }
+
+  function timeLabel(iso) {
+    return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
+  function threadRowPrefix(senderRole, myRole) {
+    if (myRole === 'admin') return senderRole === 'admin' ? 'You: ' : '';
+    return senderRole === 'admin' ? 'Studio: ' : 'You: ';
+  }
+
+  function updateThreadRow(bookingId, m, myRole) {
+    var row = document.querySelector('.thread-row[data-booking-id="' + bookingId + '"]');
+    if (!row) return;
+    var preview = row.querySelector('p');
+    if (preview) {
+      preview.classList.remove('text-gray-700');
+      preview.textContent = threadRowPrefix(m.senderRole, myRole) + (m.body || (m.attachment ? '📎 ' + m.attachment.originalName : ''));
+    }
+    var list = row.parentElement;
+    if (list && list.firstElementChild !== row) list.insertBefore(row, list.firstElementChild);
+  }
+
+  function renderMessage(bookingId, m, myRole, attachmentBase) {
+    var list = document.getElementById('message-list');
+    updateThreadRow(bookingId, m, myRole);
+    if (!list || list.querySelector('[data-message-id="' + m._id + '"]')) return;
+    var row = document.createElement('div');
+    row.className = 'bubble-row ' + (m.senderRole === myRole ? 'mine' : 'theirs');
+    row.dataset.messageId = m._id;
+    var attachmentHtml = (m.attachment && m.attachment.storedName)
+      ? '<a class="attachment-chip" href="' + attachmentBase + '/' + m.attachment.storedName + '" download="' + m.attachment.originalName + '">' +
+          '<iconify-icon icon="material-symbols-light:attach-file" width="18" height="18"></iconify-icon>' +
+          '<span style="font-size:13.5px;">' + m.attachment.originalName + '</span></a>'
+      : '';
+    var tickHtml = m.senderRole === myRole
+      ? '<iconify-icon icon="' + (m.read ? 'material-symbols:done-all' : 'material-symbols:check') + '" width="15" height="15" class="tick ' + (m.read ? 'tick-read' : '') + '"></iconify-icon>'
+      : '';
+    row.innerHTML =
+      '<div class="bubble-col"><div class="bubble">' +
+        (m.body ? '<div>' + m.body + '</div>' : '') +
+        attachmentHtml +
+        '<div class="bubble-time"><span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</div>' +
+      '</div></div>';
+    list.appendChild(row);
+    scrollToBottom();
+  }
+
+  function mountThread(bookingId) {
+    if (currentSocket) { currentSocket.disconnect(); currentSocket = null; }
+    scrollToBottom();
+
+    var composer = document.getElementById('composer');
+    if (!composer) return;
+    var myRole = composer.dataset.myRole;
+    var postPath = composer.dataset.postPath;
+    var attachmentBase = composer.dataset.attachmentBase;
+
+    currentSocket = io({ query: { bookingId: bookingId } });
+    currentSocket.on('new-message', function (m) { renderMessage(bookingId, m, myRole, attachmentBase); });
+
+    var bodyInput = document.getElementById('body-input');
+    var attachmentInput = document.getElementById('attachment-input');
+    var attachmentPreview = document.getElementById('attachment-preview');
+
+    attachmentInput.addEventListener('change', function () {
+      attachmentPreview.textContent = attachmentInput.files[0] ? attachmentInput.files[0].name : '';
+    });
+
+    composer.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var body = bodyInput.value.trim();
+      if (!body && !attachmentInput.files[0]) return;
+      var formData = new FormData();
+      formData.append('body', body);
+      if (attachmentInput.files[0]) formData.append('attachment', attachmentInput.files[0]);
+      var res = await fetch(postPath, { method: 'POST', body: formData });
+      if (!res.ok) {
+        if (typeof showToast === 'function') showToast('Message not sent', 'Please try again.', 'error');
+        return;
+      }
+      var data = await res.json();
+      renderMessage(bookingId, data.message, myRole, attachmentBase);
+      bodyInput.value = '';
+      attachmentInput.value = '';
+      attachmentPreview.textContent = '';
+    });
+
+    bodyInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        composer.requestSubmit();
+      }
+    });
+  }
+
+  async function openThread(bookingId, url, push) {
+    var res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!res.ok) return;
+    panel.innerHTML = await res.text();
+    if (push) history.pushState({ bookingId: bookingId }, '', url);
+    document.querySelectorAll('.thread-row').forEach(function (el) {
+      var isActive = el.dataset.bookingId === bookingId;
+      el.classList.toggle('active', isActive);
+      if (isActive) {
+        var badge = el.querySelector('.unread-badge');
+        if (badge) badge.remove();
+      }
+    });
+    if (messenger) messenger.classList.add('thread-active');
+    mountThread(bookingId);
+  }
+
+  document.querySelectorAll('.thread-row').forEach(function (row) {
+    row.addEventListener('click', function (e) {
+      e.preventDefault();
+      openThread(row.dataset.bookingId, row.getAttribute('href'), true);
+    });
+  });
+
+  window.showList = function () {
+    if (messenger) messenger.classList.remove('thread-active');
+  };
+
+  window.addEventListener('popstate', function () {
+    var m = location.pathname.match(/\/messages\/([a-f0-9]+)$/);
+    if (m) openThread(m[1], location.pathname, false);
+    else location.reload();
+  });
+
+  <% if (typeof booking !== 'undefined' && booking) { %>
+  if (messenger) messenger.classList.add('thread-active');
+  mountThread('<%= booking._id %>');
+  <% } %>
+}());
+</script>
