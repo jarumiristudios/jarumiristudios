@@ -60,6 +60,46 @@ const STATUS_LABELS = {
 
 const BOOKING_STATUSES = Object.keys(STATUS_LABELS);
 
+// Core happy-path progression. "paused" and "declined" are handled as special
+// cases below rather than living in this line — see isStatusChangeAllowed.
+const STATUS_CORE_ORDER = ["pending", "in-review", "accepted", "in-progress", "completed"];
+
+const STATUS_GATE_HINTS = {
+  "in-review": "Requires reaching Pending first.",
+  accepted: "Requires reaching In Review first.",
+  "in-progress": "Requires reaching Accepted first.",
+  completed: "Requires reaching In Progress first.",
+  paused: "Only available while In Progress.",
+  declined: "Not available once Completed.",
+  pending: "",
+};
+const STATUS_GATE_TERMINAL_HINT = "This booking is finalized — status can no longer be changed.";
+
+// Can a booking currently at `currentStatus` move to `targetStatus`?
+// Forward moves through the core order require having reached the prior stage;
+// backward moves are always allowed as a manual correction, unless the booking
+// is in a terminal state (completed/declined), which locks out all changes.
+function isStatusChangeAllowed(currentStatus, targetStatus) {
+  if (currentStatus === targetStatus) return true;
+  if (currentStatus === "completed" || currentStatus === "declined") return false;
+
+  if (targetStatus === "declined") return true;
+  if (targetStatus === "paused") return currentStatus === "in-progress" || currentStatus === "paused";
+
+  const coreIndex = (s) => STATUS_CORE_ORDER.indexOf(s === "paused" ? "in-progress" : s);
+  const curIdx = coreIndex(currentStatus);
+  const tgtIdx = STATUS_CORE_ORDER.indexOf(targetStatus);
+  if (curIdx === -1 || tgtIdx === -1) return false;
+
+  return tgtIdx <= curIdx + 1;
+}
+
+function getStatusGate(currentStatus) {
+  const gate = {};
+  for (const s of BOOKING_STATUSES) gate[s] = isStatusChangeAllowed(currentStatus, s);
+  return gate;
+}
+
 dotenv.config();
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -334,6 +374,20 @@ function writeBookingTxt(booking) {
   const dir = path.join(__dirname, "uploads", booking.crCode);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "booking.txt"), lines.join("\n"), "utf8");
+}
+
+function notifyAdminNewBooking(booking) {
+  const basePrice = TIER_PRICES[booking.pricingTier];
+  const costLabel = basePrice !== undefined
+    ? `${booking.pricingTier} package, $${(basePrice + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0)).toFixed(2)}`
+    : `Custom${booking.budget ? ` (budget: ${booking.budget})` : ""}`;
+
+  AdminNotification.create({
+    bookingId: booking._id,
+    crCode: booking.crCode,
+    type: "new_booking",
+    message: `New booking request from ${booking.name} (${booking.crCode}) — ${costLabel}.`,
+  }).catch((err) => console.error("Error creating admin new-booking notification:", err.message));
 }
 
 // Permanently removes uploaded media for a booking while keeping booking.txt as a record
@@ -614,11 +668,13 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
       }
       sendBookingConfirmation(booking);
       sendAdminNewBookingAlert(booking);
+      notifyAdminNewBooking(booking);
       return res.redirect(`/dashboard?submitted=${booking.crCode}`);
     }
 
     sendBookingConfirmation(booking);
     sendAdminNewBookingAlert(booking);
+    notifyAdminNewBooking(booking);
 
     res.redirect(`/hire/success?cr=${booking.crCode}`);
   } catch (err) {
@@ -1141,6 +1197,10 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   if (!booking) return res.redirect("/admin");
   res.render("admin/booking", {
     booking,
+    statusGate: getStatusGate(booking.status),
+    statusGateHints: STATUS_GATE_HINTS,
+    statusGateTerminalHint: STATUS_GATE_TERMINAL_HINT,
+    statusError: req.query.statusError || null,
     stripeError: req.query.error || null,
     deliverError: req.query.deliverError || null,
     delivered: req.query.delivered ? parseInt(req.query.delivered, 10) : null,
@@ -1178,6 +1238,9 @@ app.post("/admin/booking/:id/status", requireAdmin, async (req, res) => {
   const existing = await BookingRequest.findById(req.params.id).select("status");
   if (!existing) return res.redirect("/admin");
   if (existing.status === req.body.status) return res.redirect(`/admin/booking/${req.params.id}`);
+  if (!BOOKING_STATUSES.includes(req.body.status) || !isStatusChangeAllowed(existing.status, req.body.status)) {
+    return res.redirect(`/admin/booking/${req.params.id}?statusError=${encodeURIComponent("That status change isn't allowed yet.")}`);
+  }
 
   const booking = await BookingRequest.findByIdAndUpdate(
     req.params.id,
@@ -1192,10 +1255,11 @@ app.post("/admin/bookings/bulk-status", requireAdmin, async (req, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids : [req.body.ids].filter(Boolean);
   const status = req.body.status;
   if (ids.length && BOOKING_STATUSES.includes(status)) {
-    const bookings = await BookingRequest.find(
+    const candidates = await BookingRequest.find(
       { _id: { $in: ids }, status: { $ne: status } },
-      "clientId crCode deliverableFiles"
+      "clientId crCode deliverableFiles status"
     );
+    const bookings = candidates.filter((b) => isStatusChangeAllowed(b.status, status));
     if (bookings.length) {
       await BookingRequest.updateMany({ _id: { $in: bookings.map((b) => b._id) } }, { status });
       await notifyStatusChange(bookings, status);
@@ -1336,7 +1400,7 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
         bookingId: booking._id,
         crCode: booking.crCode,
         type: "invoice_sent",
-        message: `A deposit invoice ($${(agreedPrice * 0.30).toFixed(2)}) has been sent for project ${booking.crCode}. Check your email.`,
+        message: `A deposit invoice ($${(agreedPrice * 0.30).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
       });
     }
   } catch (err) {
@@ -1466,7 +1530,7 @@ app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
         bookingId: booking._id,
         crCode: booking.crCode,
         type: "invoice_sent",
-        message: `A final invoice ($${(booking.agreedPrice * 0.70).toFixed(2)}) has been sent for project ${booking.crCode}. Check your email.`,
+        message: `A final invoice ($${(booking.agreedPrice * 0.70).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
       });
     }
   } catch (err) {

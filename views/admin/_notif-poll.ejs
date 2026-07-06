@@ -2,10 +2,18 @@
 (function () {
   var lastSeen = Date.now();
   var isNotifPage = window.location.pathname === '/admin/notifications';
+  var isDashboardPage = window.location.pathname === '/admin';
 
   var ICONS = {
-    nudge:   { icon: 'material-symbols-light:notifications-active', cls: 'nudge',   color: '#818cf8' },
-    payment: { icon: 'material-symbols-light:payments',             cls: 'payment', color: '#34d399' },
+    nudge:       { icon: 'material-symbols-light:notifications-active', cls: 'nudge',       color: '#818cf8' },
+    payment:     { icon: 'material-symbols-light:payments',             cls: 'payment',     color: '#34d399' },
+    new_booking: { icon: 'material-symbols-light:post-add',             cls: 'new-booking', color: '#f59e0b' },
+  };
+
+  var TOAST_TITLES = {
+    nudge: 'New nudge',
+    payment: 'Payment received',
+    new_booking: 'New booking',
   };
 
   function updateBadge(count) {
@@ -80,12 +88,17 @@
         fetch('/api/admin/notifications/mark-read', { method: 'POST' });
         updateBadge(0);
         data.items.forEach(function (n) {
-          if (typeof showToast === 'function') showToast(n.type === 'payment' ? 'Payment received' : 'New nudge', n.message, 'info');
+          if (typeof showToast === 'function') showToast(TOAST_TITLES[n.type] || 'New nudge', n.message, 'info');
         });
       } else if (typeof showToast === 'function') {
         data.items.forEach(function (n) {
-          showToast(n.type === 'payment' ? 'Payment received' : 'New nudge', n.message, 'info');
+          showToast(TOAST_TITLES[n.type] || 'New nudge', n.message, 'info');
         });
+      }
+
+      if (isDashboardPage && typeof fetchAndRender === 'function'
+          && data.items.some(function (n) { return n.type === 'new_booking'; })) {
+        fetchAndRender(location.href, false);
       }
     } catch {}
   }

@@ -32,6 +32,7 @@
     }
     .notif-icon.nudge { background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.2); }
     .notif-icon.payment { background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.2); }
+    .notif-icon.new-booking { background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.2); }
 
     .unread-dot {
       width: 7px; height: 7px; border-radius: 50%;
@@ -68,14 +69,15 @@
         <iconify-icon icon="material-symbols-light:notifications-off" width="22" height="22" class="text-gray-700"></iconify-icon>
       </div>
       <p class="text-gray-600 text-sm">No notifications yet.</p>
-      <p class="text-gray-700 text-xs mt-1">You'll be notified here for client nudges and incoming payments.</p>
+      <p class="text-gray-700 text-xs mt-1">You'll be notified here for new bookings, client nudges, and incoming payments.</p>
     </div>
 
     <% } else { %>
     <div id="notif-list" class="border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]">
       <% const NOTIF_ICONS = {
-        nudge:   { icon: 'material-symbols-light:notifications-active', cls: 'nudge',   color: '#818cf8' },
-        payment: { icon: 'material-symbols-light:payments',             cls: 'payment', color: '#34d399' },
+        nudge:       { icon: 'material-symbols-light:notifications-active', cls: 'nudge',       color: '#818cf8' },
+        payment:     { icon: 'material-symbols-light:payments',             cls: 'payment',     color: '#34d399' },
+        new_booking: { icon: 'material-symbols-light:post-add',             cls: 'new-booking', color: '#f59e0b' },
       };
       notifications.forEach(n => {
         const isUnread = !n.read;
