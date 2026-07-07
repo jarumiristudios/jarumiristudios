@@ -9,6 +9,14 @@ const attachmentFields = {
   // "chat" for a fresh composer upload, or the source array's own storage type
   // ("video"/"audio"/"image"/"other"/"deliverables") when tagging an existing project file.
   folder: String,
+  // Tiny base64 blurred preview (images only) shown behind the download prompt for
+  // not-yet-downloaded attachments, so the receiver sees a hint of the image without
+  // the full file being fetched.
+  blurDataUrl: String,
+  // Set once the non-sending party has actually fetched the file (see the attachment-serving
+  // GET routes), so a re-render (page reload, new socket push) doesn't re-hide a file the
+  // receiver already chose to download.
+  downloaded: { type: Boolean, default: false },
 };
 
 const messageSchema = new mongoose.Schema(
@@ -23,6 +31,7 @@ const messageSchema = new mongoose.Schema(
     attachment: attachmentFields,
     attachments: [attachmentFields],
     read: { type: Boolean, default: false },
+    deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

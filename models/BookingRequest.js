@@ -7,7 +7,6 @@ const bookingRequestSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, trim: true, lowercase: true },
     location: { type: String, required: true, trim: true },
-    telegramHandle: { type: String, trim: true },
     serviceType: {
       type: [String],
       enum: ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"],
@@ -28,6 +27,7 @@ const bookingRequestSchema = new mongoose.Schema(
         storedName: String,
         size: Number,
         mimetype: String,
+        blurDataUrl: String,
       },
     ],
     deliverableFiles: [
@@ -36,6 +36,7 @@ const bookingRequestSchema = new mongoose.Schema(
         storedName: String,
         size: Number,
         mimetype: String,
+        blurDataUrl: String,
         uploadedAt: { type: Date, default: Date.now },
       },
     ],

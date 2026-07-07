@@ -3,6 +3,8 @@
   var messenger = document.getElementById('messenger');
   var panel = document.getElementById('thread-panel');
   var currentSocket = null;
+  var pendingUploads = {}; // pendingId -> in-flight XHR, so the cancel button can abort it
+  var pendingRetryData = {}; // pendingId -> { body, files, tagged } snapshot, kept around after a cancel so retry can resend it
 
   function scrollToBottom() {
     var list = document.getElementById('message-list');
@@ -19,11 +21,245 @@
     return new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   }
 
+  // fetch() has no upload-progress event (or a way to abort mid-flight), so use XHR when we need
+  // real byte-level progress and cancellation. Returns the xhr itself alongside the promise so the
+  // caller can abort() it (e.g. from the cancel button on the pending bubble).
+  function postWithProgress(url, formData, onProgress) {
+    var xhr = new XMLHttpRequest();
+    var promise = new Promise(function (resolve, reject) {
+      xhr.open('POST', url);
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+      xhr.onload = function () {
+        resolve({
+          ok: xhr.status >= 200 && xhr.status < 300,
+          status: xhr.status,
+          json: function () { return Promise.resolve(xhr.responseText ? JSON.parse(xhr.responseText) : {}); },
+        });
+      };
+      xhr.onerror = function () { reject(new Error('Network error')); };
+      xhr.onabort = function () {
+        var err = new Error('Upload cancelled');
+        err.aborted = true;
+        reject(err);
+      };
+      xhr.send(formData);
+    });
+    return { xhr: xhr, promise: promise };
+  }
+
+  // Mirrors CHAT_ATTACHMENT_MAX_SIZE in server.js — checked client-side so oversized files never
+  // get queued up (and uploaded) only to be rejected by multer afterward.
+  var MAX_ATTACHMENT_SIZE = 1024 * 1024 * 1024;
+
   function attachmentIcon(mimetype) {
     if (/^video\//i.test(mimetype)) return 'material-symbols-light:videocam';
     if (/^audio\//i.test(mimetype)) return 'material-symbols-light:music-note-2';
     return 'material-symbols-light:attach-file';
   }
+
+  function loadingOverlayHtml() {
+    return '<span class="thumb-loading-overlay"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+      '<circle cx="12" cy="12" r="9" stroke="rgba(255,255,255,0.25)" stroke-width="3"></circle>' +
+      '<path d="M21 12a9 9 0 0 0-9-9" stroke="#fff" stroke-width="3" stroke-linecap="round"></path></svg></span>';
+  }
+
+  // Progress ring shown on pending/downloading attachment thumbnails — its stroke-dashoffset is
+  // driven by real XHR progress, so the ring fills at the transfer's own rate.
+  var RING_RADIUS = 11;
+  var RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+  // Shared ring-with-cancel-button markup for both uploads (progressRingHtml) and downloads
+  // (downloadProgressRingHtml) — only the cancel action and title differ between the two.
+  function ringWithCancelHtml(onCancelJs, title) {
+    return '<button type="button" class="thumb-loading-overlay thumb-cancel-btn" onclick="' + onCancelJs + '" title="' + title + '">' +
+      '<span class="thumb-btn-badge">' +
+        '<svg class="thumb-progress-ring" width="28" height="28" viewBox="0 0 28 28">' +
+          '<circle cx="14" cy="14" r="' + RING_RADIUS + '" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="3.5"></circle>' +
+          '<circle class="thumb-progress-ring-fill" cx="14" cy="14" r="' + RING_RADIUS + '" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" ' +
+          'stroke-dasharray="' + RING_CIRCUMFERENCE.toFixed(2) + '" stroke-dashoffset="' + RING_CIRCUMFERENCE.toFixed(2) + '" transform="rotate(-90 14 14)"></circle>' +
+        '</svg>' +
+        '<iconify-icon icon="material-symbols-light:close" width="20" height="20" class="thumb-cancel-icon"></iconify-icon>' +
+      '</span>' +
+      '<span class="thumb-progress-text">0%</span>' +
+      '</button>';
+  }
+
+  function progressRingHtml(pendingId) {
+    return ringWithCancelHtml("window.cancelPendingUpload('" + pendingId + "')", 'Cancel upload');
+  }
+
+  function downloadProgressRingHtml() {
+    return ringWithCancelHtml(
+      "event.preventDefault(); event.stopPropagation(); window.cancelAttachmentDownload(this.closest('[data-download-url]'));",
+      'Cancel download'
+    );
+  }
+
+  // Static "tap to retry" icon that replaces the ring once an upload is cancelled.
+  function retryUploadIconHtml(pendingId) {
+    return '<button type="button" class="thumb-loading-overlay thumb-retry-btn" onclick="window.retryPendingUpload(\'' + pendingId + '\')" title="Retry upload">' +
+      '<span class="thumb-btn-badge"><iconify-icon icon="material-symbols-light:upload" width="24" height="24"></iconify-icon></span></button>';
+  }
+
+  // Idle "tap to download" icon shown on a received image/video thumbnail before it's fetched.
+  // contextSize is the attachment's icon-size context (28 for the big bubble preview, 13 for the
+  // small tagged-inline badge) — used only to pick a proportionate icon size for the badge.
+  function downloadIconHtml(contextSize) {
+    var iconPx = Number(contextSize) >= 20 ? 32 : 18;
+    return '<button type="button" class="thumb-download-btn" onclick="event.preventDefault(); event.stopPropagation(); window.startAttachmentDownload(this.closest(\'[data-download-url]\'));">' +
+      '<span class="thumb-btn-badge"><iconify-icon icon="material-symbols-light:download" width="' + iconPx + '" height="' + iconPx + '"></iconify-icon></span></button>';
+  }
+
+  window.cancelPendingUpload = function (pendingId) {
+    var xhr = pendingUploads[pendingId];
+    if (xhr) xhr.abort();
+  };
+
+  function setPendingProgress(pendingId, fraction) {
+    var row = document.querySelector('.bubble-row[data-pending-id="' + pendingId + '"]');
+    if (!row) return;
+    var clamped = Math.min(Math.max(fraction, 0), 1);
+    var offset = RING_CIRCUMFERENCE * (1 - clamped);
+    var percent = Math.round(clamped * 100);
+    row.querySelectorAll('.thumb-progress-ring-fill').forEach(function (c) { c.setAttribute('stroke-dashoffset', offset.toFixed(2)); });
+    row.querySelectorAll('.thumb-progress-text').forEach(function (t) { t.textContent = percent + '%'; });
+    var timeText = row.querySelector('.bubble-time-text');
+    if (timeText) timeText.textContent = 'Sending ' + percent + '%…';
+  }
+
+  // A cancelled or failed upload no longer deletes the pending bubble — it's left in place with a
+  // static "upload" icon on each thumbnail so the user can retry the exact same send. This is the
+  // only recovery path once the composer's own draft is gone (it clears the moment Send is hit).
+  function markPendingFailed(pendingId, body, files, tagged) {
+    pendingRetryData[pendingId] = { body: body, files: files, tagged: tagged };
+    var row = document.querySelector('.bubble-row[data-pending-id="' + pendingId + '"]');
+    if (!row) return;
+    row.classList.add('cancelled', 'retry-cooldown');
+    row.querySelectorAll('.thumb-cancel-btn').forEach(function (el) { el.outerHTML = retryUploadIconHtml(pendingId); });
+    var timeText = row.querySelector('.bubble-time-text');
+    if (timeText) timeText.textContent = 'Not sent — tap to retry';
+    // The retry icon lands in the exact same spot the cancel button just occupied, so a fast
+    // double-click/double-tap from the cancel gesture would otherwise instantly re-trigger a send.
+    // Block clicks (via .retry-cooldown, see CSS) and delay wiring the bubble-level retry handler
+    // (for text-only messages, which have no thumbnail to carry a retry icon) for a beat.
+    setTimeout(function () {
+      row.classList.remove('retry-cooldown');
+      var bubble = row.querySelector('.bubble');
+      if (bubble) bubble.onclick = function () { window.retryPendingUpload(pendingId); };
+    }, 500);
+  }
+
+  window.retryPendingUpload = function (pendingId) {
+    var data = pendingRetryData[pendingId];
+    var row = document.querySelector('.bubble-row[data-pending-id="' + pendingId + '"]');
+    var composer = document.getElementById('composer');
+    if (!data || !row || !composer) return;
+    delete pendingRetryData[pendingId];
+    row.classList.remove('cancelled');
+    row.querySelectorAll('.thumb-retry-btn').forEach(function (el) { el.outerHTML = progressRingHtml(pendingId); });
+    var bubble = row.querySelector('.bubble');
+    if (bubble) bubble.onclick = null;
+    var timeText = row.querySelector('.bubble-time-text');
+    if (timeText) timeText.textContent = 'Sending…';
+    attemptSend(pendingId, data.body, data.files, data.tagged, row.dataset.bookingId, composer.dataset.myRole, composer.dataset.postPath, composer.dataset.attachmentBase);
+  };
+
+  // Sends (or resends) one message. Shared by the composer's submit handler and the retry-icon
+  // click so both paths update the same pending bubble the same way.
+  async function attemptSend(pendingId, body, files, tagged, bookingId, myRole, postPath, attachmentBase) {
+    var formData = new FormData();
+    formData.append('body', body);
+    files.forEach(function (entry) { formData.append('attachments', entry.file); });
+    if (tagged.length) {
+      formData.append('taggedFiles', JSON.stringify(tagged.map(function (t) { return { id: t.fileId, source: t.source }; })));
+    }
+
+    var upload = postWithProgress(postPath, formData, function (fraction) { setPendingProgress(pendingId, fraction); });
+    pendingUploads[pendingId] = upload.xhr;
+
+    var res, cancelled = false;
+    try {
+      res = await upload.promise;
+    } catch (err) {
+      cancelled = !!(err && err.aborted);
+      res = { ok: false };
+    }
+    delete pendingUploads[pendingId];
+
+    // The composer clears the moment you hit Send (see the submit handler), so this bubble is now
+    // the only place to recover a failed/cancelled message from — both cases get the retry icon.
+    if (cancelled || !res.ok) {
+      if (!cancelled && typeof showToast === 'function') showToast('Message not sent', 'Please try again.', 'error');
+      markPendingFailed(pendingId, body, files, tagged);
+      return false;
+    }
+    removePendingRow(pendingId);
+    var data = await res.json();
+    renderMessage(bookingId, data.message, myRole, attachmentBase);
+    return true;
+  }
+
+  // ── Lazy attachment downloads (received images/videos) — don't auto-fetch large media, show a
+  // download icon instead; clicking it fetches with a cancelable progress ring, same as uploads. ──
+  window.startAttachmentDownload = function (container) {
+    if (!container || container.classList.contains('downloading')) return;
+    var url = container.dataset.downloadUrl;
+    var mimetype = container.dataset.mimetype || '';
+    var iconSize = container.dataset.iconSize || '28';
+    container.classList.add('downloading');
+    container.innerHTML = downloadProgressRingHtml();
+
+    function revertToIdle() {
+      container._downloadXhr = null;
+      container.classList.remove('downloading');
+      container.innerHTML = downloadIconHtml(iconSize);
+      // The idle download icon reappears in the exact spot the cancel button just occupied, so
+      // briefly block clicks to stop a fast double-click/double-tap from instantly re-downloading.
+      container.classList.add('retry-cooldown');
+      setTimeout(function () { container.classList.remove('retry-cooldown'); }, 500);
+    }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.responseType = 'blob';
+    xhr.onprogress = function (e) {
+      if (!e.lengthComputable) return;
+      var fraction = Math.min(e.loaded / e.total, 1);
+      var offset = RING_CIRCUMFERENCE * (1 - fraction);
+      var ring = container.querySelector('.thumb-progress-ring-fill');
+      if (ring) ring.setAttribute('stroke-dashoffset', offset.toFixed(2));
+      var text = container.querySelector('.thumb-progress-text');
+      if (text) text.textContent = Math.round(fraction * 100) + '%';
+    };
+    xhr.onload = function () {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        revertToIdle();
+        if (typeof showToast === 'function') showToast('Could not load file', 'Please try again.', 'error');
+        return;
+      }
+      var blobUrl = URL.createObjectURL(xhr.response);
+      container._downloadXhr = null;
+      container.classList.remove('downloading', 'lazy-attachment');
+      container.classList.add('media-loaded');
+      container.style.backgroundImage = '';
+      container.innerHTML = /^video\//i.test(mimetype)
+        ? '<video src="' + blobUrl + '" muted preload="metadata"></video>'
+        : '<img src="' + blobUrl + '" alt="" />';
+    };
+    xhr.onerror = function () {
+      revertToIdle();
+      if (typeof showToast === 'function') showToast('Could not load file', 'Please try again.', 'error');
+    };
+    xhr.onabort = revertToIdle;
+    container._downloadXhr = xhr;
+    xhr.send();
+  };
+
+  window.cancelAttachmentDownload = function (container) {
+    if (container && container._downloadXhr) container._downloadXhr.abort();
+  };
 
   function thumbInnerHtml(mimetype, url) {
     if (/^image\//i.test(mimetype)) return '<img src="' + url + '" alt="" />';
@@ -39,13 +275,39 @@
     return [];
   }
 
-  function attachmentBadgeHtml(attachment, attachmentBase) {
+  // Inline background-image for a not-yet-downloaded image attachment's blurred preview —
+  // empty string when not lazy or no preview was generated (e.g. video, or upload predates
+  // thumbnail generation).
+  function blurStyleAttr(attachment, lazy) {
+    if (!lazy || !attachment.blurDataUrl) return '';
+    return ' style="background-image:url(\'' + attachment.blurDataUrl + '\')"';
+  }
+
+  function attachmentBadgeHtml(attachment, attachmentBase, isMine) {
     if (!attachment || !attachment.storedName) return '';
     var attUrl = attachmentBase + '/' + attachment.storedName;
     var isAudio = /^audio\//i.test(attachment.mimetype);
-    return '<a class="attachment-badge" href="' + attUrl + '" download="' + escapeHtml(attachment.originalName) + '">' +
-        '<span class="badge-thumb' + (isAudio ? ' badge-thumb-audio' : '') + '">' + thumbInnerHtml(attachment.mimetype, attUrl) + '</span>' +
-        '<span class="badge-name">' + escapeHtml(attachment.originalName) + '</span></a>';
+    var isImage = /^image\//i.test(attachment.mimetype);
+    var isVideo = /^video\//i.test(attachment.mimetype);
+    var lazy = !isMine && (isImage || isVideo) && !attachment.downloaded;
+    var thumbInner;
+    if (lazy) {
+      thumbInner = downloadIconHtml(28);
+    } else if (isImage) {
+      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')" />' + loadingOverlayHtml();
+    } else if (isVideo) {
+      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.badge-thumb\').classList.add(\'media-loaded\')"></video>' + loadingOverlayHtml();
+    } else if (isAudio) {
+      thumbInner = '<iconify-icon icon="material-symbols-light:music-note-2" width="32" height="32" style="color:#f59e0b;"></iconify-icon>';
+    } else {
+      thumbInner = '<iconify-icon icon="' + attachmentIcon(attachment.mimetype) + '" width="32" height="32"></iconify-icon>';
+    }
+    return '<a class="attachment-badge" href="' + attUrl + '" download="' + escapeHtml(attachment.originalName) + '" title="' + escapeHtml(attachment.originalName) + '"' +
+        ' onclick="return window.openFileViewer(event, this)"' +
+        ' data-stored-name="' + escapeHtml(attachment.storedName) + '" data-original-name="' + escapeHtml(attachment.originalName) + '"' +
+        ' data-mimetype="' + escapeHtml(attachment.mimetype) + '" data-size="' + attachment.size + '">' +
+        '<span class="badge-thumb badge-thumb-preview' + (isAudio ? ' badge-thumb-audio' : '') + (lazy ? ' lazy-attachment' : '') + '"' +
+        ' data-download-url="' + attUrl + '" data-mimetype="' + escapeHtml(attachment.mimetype) + '" data-icon-size="28"' + blurStyleAttr(attachment, lazy) + '>' + thumbInner + '</span></a>';
   }
 
   function truncateTaggedName(name) {
@@ -57,16 +319,30 @@
     return base.slice(0, 4) + '…' + base.slice(-4) + ext;
   }
 
-  function taggedInlineBadgeHtml(attachment, attachmentBase) {
+  function taggedInlineBadgeHtml(attachment, attachmentBase, isMine) {
     if (!attachment || !attachment.storedName) return '';
     var attUrl = attachmentBase + '/' + attachment.storedName;
-    var thumbInner = /^audio\//i.test(attachment.mimetype)
-      ? '<iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>'
-      : (/^image\//i.test(attachment.mimetype) || /^video\//i.test(attachment.mimetype)
-        ? thumbInnerHtml(attachment.mimetype, attUrl)
-        : '<iconify-icon icon="' + attachmentIcon(attachment.mimetype) + '" width="13" height="13"></iconify-icon>');
-    return '<a class="tagged-inline-badge" href="' + attUrl + '" download="' + escapeHtml(attachment.originalName) + '" title="' + escapeHtml(attachment.originalName) + '">' +
-        '<span class="tagged-inline-thumb">' + thumbInner + '</span>' +
+    var isImage = /^image\//i.test(attachment.mimetype);
+    var isVideo = /^video\//i.test(attachment.mimetype);
+    var lazy = !isMine && (isImage || isVideo) && !attachment.downloaded;
+    var thumbInner;
+    if (lazy) {
+      thumbInner = downloadIconHtml(13);
+    } else if (isImage) {
+      thumbInner = '<img src="' + attUrl + '" alt="" onload="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')" />' + loadingOverlayHtml();
+    } else if (isVideo) {
+      thumbInner = '<video src="' + attUrl + '" muted preload="metadata" onloadeddata="this.closest(\'.tagged-inline-thumb\').classList.add(\'media-loaded\')"></video>' + loadingOverlayHtml();
+    } else if (/^audio\//i.test(attachment.mimetype)) {
+      thumbInner = '<iconify-icon icon="material-symbols-light:music-note-2" width="13" height="13" style="color:#f59e0b;"></iconify-icon>';
+    } else {
+      thumbInner = '<iconify-icon icon="' + attachmentIcon(attachment.mimetype) + '" width="13" height="13"></iconify-icon>';
+    }
+    return '<a class="tagged-inline-badge" href="' + attUrl + '" download="' + escapeHtml(attachment.originalName) + '" title="' + escapeHtml(attachment.originalName) + '"' +
+        ' onclick="return window.openFileViewer(event, this)"' +
+        ' data-stored-name="' + escapeHtml(attachment.storedName) + '" data-original-name="' + escapeHtml(attachment.originalName) + '"' +
+        ' data-mimetype="' + escapeHtml(attachment.mimetype) + '" data-size="' + attachment.size + '">' +
+        '<span class="tagged-inline-thumb' + (lazy ? ' lazy-attachment' : '') + '"' +
+        ' data-download-url="' + attUrl + '" data-mimetype="' + escapeHtml(attachment.mimetype) + '" data-icon-size="13"' + blurStyleAttr(attachment, lazy) + '>' + thumbInner + '</span>' +
         '<span>' + escapeHtml(truncateTaggedName(attachment.originalName)) + '</span></a>';
   }
 
@@ -74,6 +350,132 @@
     if (!attachments.length) return '';
     return attachments.length === 1 ? '📎 ' + attachments[0].originalName : '📎 ' + attachments.length + ' files';
   }
+
+  // ── File viewer (opened by clicking an uploaded file's thumbnail in chat) ──
+  var viewerState = { list: [], index: 0 };
+
+  function viewerFileType(mimetype) {
+    if (/^video\//i.test(mimetype)) return 'video';
+    if (/^audio\//i.test(mimetype)) return 'audio';
+    if (/^image\//i.test(mimetype)) return 'image';
+    return 'other';
+  }
+
+  function viewerSizeLabel(bytes) {
+    return bytes < 1024 * 1024 ? (bytes / 1024).toFixed(1) + ' KB' : (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  }
+
+  function renderViewerGrid() {
+    var grid = document.getElementById('viewer-file-grid');
+    if (!grid) return;
+    grid.innerHTML = viewerState.list.map(function (f, i) {
+      var type = viewerFileType(f.mimetype);
+      var inner;
+      if (type === 'image') inner = '<img src="' + f.url + '" alt="" />';
+      else if (type === 'video') inner = '<video src="' + f.url + '" muted preload="metadata"></video>';
+      else if (type === 'audio') inner = '<iconify-icon icon="material-symbols-light:music-note-2" width="20" height="20" style="color:#f59e0b;"></iconify-icon>';
+      else inner = '<iconify-icon icon="material-symbols-light:attach-file" width="20" height="20" style="color:#6b7280;"></iconify-icon>';
+      return '<div class="viewer-thumb" data-idx="' + i + '" onclick="window.selectViewerFile(' + i + ')">' + inner + '</div>';
+    }).join('');
+  }
+
+  async function saveToProject(f) {
+    var composer = document.getElementById('composer');
+    var attachmentBase = composer ? composer.dataset.attachmentBase : '';
+    var btn = document.getElementById('viewer-save-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+    var res = await fetch(attachmentBase + '/' + f.storedName + '/save-to-project', { method: 'POST' });
+    if (!res.ok) {
+      if (typeof showToast === 'function') showToast('Could not add file', 'Please try again.', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = 'Add to project files'; }
+      return;
+    }
+    f.inProject = true;
+    if (typeof showToast === 'function') showToast('Added to project files', f.originalName, 'success');
+    window.selectViewerFile(viewerState.index);
+  }
+
+  window.selectViewerFile = function (idx) {
+    var f = viewerState.list[idx];
+    if (!f) return;
+    viewerState.index = idx;
+    var type = viewerFileType(f.mimetype);
+    var player = document.getElementById('viewer-player');
+    if (type === 'video') {
+      player.innerHTML = '<video controls src="' + f.url + '"></video>';
+    } else if (type === 'audio') {
+      player.innerHTML = '<audio controls style="width:300px;"><source src="' + f.url + '" type="' + f.mimetype + '"></audio>';
+    } else if (type === 'image') {
+      player.innerHTML = '<img src="' + f.url + '" alt="" />';
+    } else {
+      player.innerHTML = '<iconify-icon icon="material-symbols-light:attach-file" width="44" height="44" style="color:#4b5563;"></iconify-icon>';
+    }
+
+    document.getElementById('viewer-filename').textContent = f.originalName;
+
+    var canSave = !f.inProject;
+    var infoBar = document.getElementById('viewer-info-bar');
+    infoBar.innerHTML =
+      '<div style="flex:1;min-width:0;">' +
+        '<p style="font-size:13px;color:#e5e7eb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0 0 2px;">' + escapeHtml(f.originalName) + '</p>' +
+        '<p style="font-size:11px;color:#6b7280;margin:0;">' + viewerSizeLabel(f.size) + '</p>' +
+      '</div>' +
+      (canSave
+        ? '<button type="button" id="viewer-save-btn" style="font-size:12px;font-weight:600;color:#000;background:#f59e0b;border:none;cursor:pointer;padding:6px 14px;border-radius:9999px;white-space:nowrap;flex-shrink:0;">Add to project files</button>'
+        : '<span style="font-size:12px;color:#4ade80;white-space:nowrap;flex-shrink:0;">✓ In project files</span>') +
+      '<a href="' + f.url + '" download="' + escapeHtml(f.originalName) + '" style="font-size:12px;font-weight:600;color:#f59e0b;text-decoration:none;padding:6px 14px;border-radius:9999px;border:1px solid rgba(245,158,11,0.3);white-space:nowrap;flex-shrink:0;">Download</a>';
+
+    if (canSave) {
+      document.getElementById('viewer-save-btn').addEventListener('click', function () { saveToProject(f); });
+    }
+
+    document.querySelectorAll('.viewer-thumb').forEach(function (el) {
+      el.classList.toggle('selected', parseInt(el.dataset.idx, 10) === idx);
+    });
+  };
+
+  window.openFileViewer = function (e, el) {
+    if (e) e.preventDefault();
+    var modal = document.getElementById('file-viewer-modal');
+    if (!modal) return false;
+    var files;
+    try { files = JSON.parse(modal.dataset.files || '[]'); } catch (err) { files = []; }
+    files.forEach(function (f) { f.inProject = true; });
+    var clicked = {
+      storedName: el.dataset.storedName,
+      originalName: el.dataset.originalName,
+      mimetype: el.dataset.mimetype,
+      size: parseInt(el.dataset.size, 10) || 0,
+      url: el.getAttribute('href'),
+      inProject: false,
+    };
+    var existingIdx = files.findIndex(function (f) { return f.storedName === clicked.storedName; });
+    var list, startIdx;
+    if (existingIdx >= 0) {
+      list = files;
+      startIdx = existingIdx;
+    } else {
+      list = [clicked].concat(files);
+      startIdx = 0;
+    }
+    viewerState.list = list;
+    renderViewerGrid();
+    window.selectViewerFile(startIdx);
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    document.body.style.overflow = 'hidden';
+    return false;
+  };
+
+  window.closeFileViewer = function () {
+    var modal = document.getElementById('file-viewer-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    var player = document.getElementById('viewer-player');
+    if (player) player.innerHTML = '';
+    document.body.style.overflow = '';
+  };
 
   function dayLabel(date) {
     var now = new Date();
@@ -121,19 +523,25 @@
     var list = document.getElementById('message-list');
     updateThreadRow(bookingId, m, myRole);
     if (!list || list.querySelector('[data-message-id="' + m._id + '"]')) return;
+    var isMine = m.senderRole === myRole;
     var row = document.createElement('div');
-    row.className = 'bubble-row ' + (m.senderRole === myRole ? 'mine' : 'theirs');
+    row.className = 'bubble-row ' + (isMine ? 'mine' : 'theirs');
     row.dataset.messageId = m._id;
     var attachmentHtml = messageAttachments(m).map(function (a) {
       var isTagged = a.folder && a.folder !== 'chat';
-      return isTagged ? taggedInlineBadgeHtml(a, attachmentBase) : attachmentBadgeHtml(a, attachmentBase);
+      return isTagged ? taggedInlineBadgeHtml(a, attachmentBase, isMine) : attachmentBadgeHtml(a, attachmentBase, isMine);
     }).join('');
-    var showTick = m.senderRole === myRole;
+    var showTick = isMine;
     var tickHtml = showTick
       ? '<iconify-icon icon="' + (m.read ? 'material-symbols:done-all' : 'material-symbols:check') + '" width="15" height="15" class="tick ' + (m.read ? 'tick-read' : '') + '"></iconify-icon>'
       : '';
     var spacerHtml = m.body ? '<span class="time-spacer ' + (showTick ? 'with-tick' : '') + '"></span>' : '';
+    var deleteBtnHtml = (m.senderRole === myRole && !m.deleted)
+      ? '<button type="button" class="msg-delete-btn" onclick="window.deleteMessage(\'' + m._id + '\')" title="Delete message">' +
+        '<iconify-icon icon="material-symbols-light:delete-outline" width="20" height="20"></iconify-icon></button>'
+      : '';
     row.innerHTML =
+      deleteBtnHtml +
       '<div class="bubble-col"><div class="bubble">' +
         attachmentHtml +
         escapeHtml(m.body || '') + spacerHtml +
@@ -143,6 +551,76 @@
     list.appendChild(row);
     scrollToBottom();
   }
+
+  // ── Optimistic "sending" bubble — shown while an attachment upload is in flight ──
+  function pendingThumbHtml(mimetype, url, pendingId) {
+    var inner;
+    if (/^image\//i.test(mimetype)) inner = '<img src="' + url + '" alt="" />';
+    else if (/^video\//i.test(mimetype)) inner = '<video src="' + url + '" muted preload="metadata"></video>';
+    else if (/^audio\//i.test(mimetype)) inner = '<iconify-icon icon="material-symbols-light:music-note-2" width="32" height="32" style="color:#f59e0b;"></iconify-icon>';
+    else inner = '<iconify-icon icon="' + attachmentIcon(mimetype) + '" width="32" height="32"></iconify-icon>';
+    return inner + progressRingHtml(pendingId);
+  }
+
+  function renderPendingRow(pendingId, body, thumbs, bookingId) {
+    var list = document.getElementById('message-list');
+    if (!list) return;
+    var row = document.createElement('div');
+    row.className = 'bubble-row mine pending';
+    row.dataset.pendingId = pendingId;
+    row.dataset.bookingId = bookingId;
+    var attachmentHtml = thumbs.map(function (t) {
+      return '<span class="attachment-badge"><span class="badge-thumb badge-thumb-preview' + (/^audio\//i.test(t.mimetype) ? ' badge-thumb-audio' : '') + '">' +
+        pendingThumbHtml(t.mimetype, t.url, pendingId) + '</span></span>';
+    }).join('');
+    var spacerHtml = body ? '<span class="time-spacer"></span>' : '';
+    row.innerHTML =
+      '<div class="bubble-col"><div class="bubble">' +
+        attachmentHtml +
+        escapeHtml(body || '') + spacerHtml +
+        '<span class="bubble-time ' + (body ? 'corner' : 'block') + '"><span class="bubble-time-text">Sending…</span></span>' +
+      '</div></div>';
+    maybeInsertDaySeparator(list, new Date());
+    list.appendChild(row);
+    scrollToBottom();
+  }
+
+  function removePendingRow(pendingId) {
+    var row = document.querySelector('.bubble-row[data-pending-id="' + pendingId + '"]');
+    if (row) row.remove();
+  }
+
+  function applyMessageDeleted(messageId) {
+    var row = document.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row || row.classList.contains('deleted')) return;
+    row.classList.add('deleted');
+    var delBtn = row.querySelector('.msg-delete-btn');
+    if (delBtn) delBtn.remove();
+    var bubble = row.querySelector('.bubble');
+    if (!bubble) return;
+    var showTick = row.classList.contains('mine');
+    var existingTick = bubble.querySelector('.tick');
+    var tickHtml = showTick && existingTick ? existingTick.outerHTML : '';
+    var timeTextEl = bubble.querySelector('.bubble-time-text');
+    var timeText = timeTextEl ? timeTextEl.textContent : '';
+    bubble.innerHTML =
+      '<span class="bubble-deleted-text">This message was deleted</span><span class="time-spacer ' + (showTick ? 'with-tick' : '') + '"></span>' +
+      '<span class="bubble-time corner"><span class="bubble-time-text">' + timeText + '</span>' + tickHtml + '</span>';
+  }
+
+  window.deleteMessage = async function (messageId) {
+    var ok = typeof showConfirm === 'function'
+      ? await showConfirm({ title: 'Delete this message?', confirmLabel: 'Delete', tone: 'danger' })
+      : confirm('Delete this message?');
+    if (!ok) return;
+    var composer = document.getElementById('composer');
+    if (!composer) return;
+    var postPath = composer.dataset.postPath;
+    fetch(postPath + '/' + messageId + '/delete', { method: 'POST' }).then(function (res) {
+      if (res.ok) { applyMessageDeleted(messageId); return; }
+      if (typeof showToast === 'function') showToast('Could not delete message', 'Please try again.', 'error');
+    });
+  };
 
   function mountThread(bookingId) {
     if (currentSocket) { currentSocket.disconnect(); currentSocket = null; }
@@ -156,6 +634,7 @@
 
     currentSocket = io({ query: { bookingId: bookingId } });
     currentSocket.on('new-message', function (m) { renderMessage(bookingId, m, myRole, attachmentBase); });
+    currentSocket.on('message-deleted', function (data) { applyMessageDeleted(data.messageId); });
 
     var bodyInput = document.getElementById('body-input');
     var attachmentInput = document.getElementById('attachment-input');
@@ -205,10 +684,18 @@
     }
 
     function addFiles(fileList) {
+      var rejected = [];
       Array.prototype.forEach.call(fileList, function (file) {
+        if (file.size > MAX_ATTACHMENT_SIZE) { rejected.push(file.name); return; }
         pendingFiles.push({ file: file, url: URL.createObjectURL(file) });
       });
       renderPreview();
+      if (rejected.length && typeof showToast === 'function') {
+        var detail = rejected.length === 1
+          ? rejected[0] + ' is over the 1 GB limit.'
+          : rejected.length + ' files are over the 1 GB limit.';
+        showToast('File too large', detail, 'error');
+      }
     }
 
     function removeFileAt(index) {
@@ -247,8 +734,9 @@
       renderPreview();
     }
 
+    // Doesn't revoke the pendingFiles' object URLs — the pending bubble being sent still displays
+    // local previews through those same blob URLs until the send finally succeeds or is abandoned.
     function resetComposerAttachments() {
-      pendingFiles.forEach(function (entry) { URL.revokeObjectURL(entry.url); });
       pendingFiles = [];
       pendingTagged.forEach(function (entry) { unselectTaggedBtn(entry.fileId); });
       pendingTagged = [];
@@ -290,21 +778,18 @@
       e.preventDefault();
       var body = bodyInput.value.trim();
       if (!body && pendingFiles.length === 0 && pendingTagged.length === 0) return;
-      var formData = new FormData();
-      formData.append('body', body);
-      pendingFiles.forEach(function (entry) { formData.append('attachments', entry.file); });
-      if (pendingTagged.length) {
-        formData.append('taggedFiles', JSON.stringify(pendingTagged.map(function (t) { return { id: t.fileId, source: t.source }; })));
-      }
-      var res = await fetch(postPath, { method: 'POST', body: formData });
-      if (!res.ok) {
-        if (typeof showToast === 'function') showToast('Message not sent', 'Please try again.', 'error');
-        return;
-      }
-      var data = await res.json();
-      renderMessage(bookingId, data.message, myRole, attachmentBase);
+
+      var pendingId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+      var pendingThumbs = pendingFiles.map(function (entry) { return { mimetype: entry.file.type, url: entry.url }; })
+        .concat(pendingTagged.map(function (entry) { return { mimetype: entry.mimetype, url: entry.thumbUrl }; }));
+      renderPendingRow(pendingId, body, pendingThumbs, bookingId);
+
+      var sendFiles = pendingFiles.slice();
+      var sendTagged = pendingTagged.slice();
       bodyInput.value = '';
       resetComposerAttachments();
+
+      attemptSend(pendingId, body, sendFiles, sendTagged, bookingId, myRole, postPath, attachmentBase);
     });
 
     bodyInput.addEventListener('keydown', function (e) {
@@ -350,6 +835,8 @@
       modal.classList.add('hidden');
       modal.classList.remove('flex');
     }
+    var viewer = document.getElementById('file-viewer-modal');
+    if (viewer && !viewer.classList.contains('hidden')) window.closeFileViewer();
   });
 
   window.addEventListener('popstate', function () {

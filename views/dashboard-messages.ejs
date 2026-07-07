@@ -62,16 +62,27 @@
       font-size: 11px; font-weight: 600; color: #6b7280;
       background: rgba(255,255,255,0.05); padding: 4px 14px; border-radius: 9999px;
     }
-    .bubble-row { display: flex; margin-bottom: 6px; }
+    .bubble-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
     .bubble-row.mine { justify-content: flex-end; }
     .bubble-col { max-width: 70%; }
+    .msg-delete-btn {
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+      background: none; border: none; color: #6b7280;
+      opacity: 0; transition: opacity 0.15s, color 0.15s;
+    }
+    .bubble-row:hover .msg-delete-btn { opacity: 1; }
+    .msg-delete-btn:hover { color: #f87171; }
+    .bubble-row.deleted .bubble { font-style: italic; }
+    .bubble-deleted-text { color: rgba(0,0,0,0.5); }
+    .bubble-row.theirs .bubble-deleted-text { color: #6b7280; }
     .bubble {
       position: relative;
       width: fit-content;
       max-width: 100%;
       min-width: 96px;
-      padding: 11px 16px;
-      border-radius: 14px;
+      padding: 7px 11px;
+      border-radius: 6px;
       font-size: 14.5px;
       line-height: 1.55;
       word-wrap: break-word;
@@ -84,30 +95,70 @@
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 11px; line-height: 1;
     }
-    .bubble-time.corner { position: absolute; right: 16px; bottom: 11px; }
+    .bubble-time.corner { position: absolute; right: 11px; bottom: 7px; }
     .bubble-time.block { display: flex; justify-content: flex-end; margin-top: 4px; }
     .bubble-time-text { opacity: 0.65; }
     .tick { opacity: 1; color: rgba(0,0,0,0.55); }
     .tick-read { color: #1d4ed8; }
 
     .attachment-badge {
-      display: flex; align-items: center; gap: 9px;
-      padding: 7px 12px 7px 7px; border-radius: 9px;
-      background: rgba(0,0,0,0.15);
+      display: block;
+      width: fit-content;
       text-decoration: none; margin-top: 7px;
     }
-    .bubble-row.theirs .attachment-badge { background: rgba(0,0,0,0.25); color: #e5e7eb; }
-    .bubble-row.mine .attachment-badge { background: rgba(0,0,0,0.12); color: #000; }
     .badge-thumb {
       position: relative;
       display: flex; align-items: center; justify-content: center;
       width: 34px; height: 34px; border-radius: 6px; flex-shrink: 0;
       background: rgba(255,255,255,0.08);
+      background-size: cover; background-position: center;
     }
     .badge-thumb img, .badge-thumb video { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+    .attachment-badge .badge-thumb img, .attachment-badge .badge-thumb video { object-fit: contain; background: rgba(0,0,0,0.4); }
     .badge-thumb-lg { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.1); }
+    .badge-thumb-preview { width: 320px; height: 320px; border-radius: 10px; }
     .badge-thumb-audio { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.22); }
-    .badge-name { font-size: 13.5px; }
+    @keyframes thumb-spin { to { transform: rotate(360deg); } }
+    .thumb-loading-overlay {
+      position: absolute; inset: 0; z-index: 2; border-radius: inherit;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+      background: rgba(0,0,0,0.32);
+    }
+    .thumb-loading-overlay > svg { width: 40%; height: 40%; max-width: 28px; max-height: 28px; animation: thumb-spin 0.8s linear infinite; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
+    .thumb-progress-text {
+      font-size: 11px; font-weight: 700; line-height: 1; color: #fff;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+    }
+    .thumb-btn-badge {
+      position: relative; flex-shrink: 0;
+      width: 70%; height: 70%; max-width: 52px; max-height: 52px; min-width: 18px; min-height: 18px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.82);
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .thumb-btn-badge svg.thumb-progress-ring { width: 85%; height: 85%; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5)); }
+    .thumb-btn-badge iconify-icon { color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); }
+    .thumb-progress-ring-fill { transition: stroke-dashoffset 0.15s linear; }
+    .thumb-cancel-icon { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); }
+    .thumb-cancel-btn { appearance: none; border: none; padding: 0; margin: 0; font: inherit; }
+    .thumb-cancel-btn:hover .thumb-progress-ring-fill { stroke: #f87171; }
+    .thumb-cancel-btn:hover .thumb-btn-badge, .thumb-retry-btn:hover .thumb-btn-badge, .thumb-download-btn:hover .thumb-btn-badge { background: rgba(0,0,0,0.95); }
+    .badge-thumb.media-loaded .thumb-loading-overlay, .tagged-inline-thumb.media-loaded .thumb-loading-overlay { display: none; }
+    .bubble-row.pending .bubble-time-text { opacity: 1; }
+    .bubble-row.pending.cancelled .bubble-time-text { color: #f87171; opacity: 1; }
+    .bubble-row.pending.cancelled .bubble { cursor: pointer; }
+    .bubble-row.pending.cancelled.retry-cooldown .thumb-retry-btn { pointer-events: none; }
+    .bubble-row.pending.cancelled.retry-cooldown .bubble { cursor: default; }
+    .retry-cooldown > .thumb-download-btn { pointer-events: none; }
+    .thumb-retry-btn { appearance: none; border: none; padding: 0; margin: 0; font: inherit; }
+    .thumb-download-btn {
+      appearance: none; border: none; padding: 0; margin: 0; font: inherit;
+      width: 100%; height: 100%; border-radius: inherit;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.32);
+    }
+    .lazy-attachment { cursor: pointer; }
     .badge-tag-mark {
       position: absolute; bottom: -3px; right: -3px;
       width: 15px; height: 15px; border-radius: 50%;
@@ -128,11 +179,36 @@
     .bubble-row.theirs .tagged-inline-badge { background: rgba(0,0,0,0.25); color: #e5e7eb; }
     .bubble-row.mine .tagged-inline-badge { background: rgba(0,0,0,0.12); color: #000; }
     .tagged-inline-thumb {
+      position: relative;
       display: flex; align-items: center; justify-content: center;
       width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
       background: rgba(255,255,255,0.15); overflow: hidden;
+      background-size: cover; background-position: center;
     }
     .tagged-inline-thumb img, .tagged-inline-thumb video { width: 100%; height: 100%; object-fit: cover; }
+
+    .viewer-container {
+      background: #111; border: 1px solid rgba(255,255,255,0.09); border-radius: 12px;
+      width: 100%; max-width: 1100px; height: 100%; max-height: 720px;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .viewer-header { display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-bottom: 1px solid rgba(255,255,255,0.07); flex-shrink: 0; }
+    .viewer-filename { font-size: 14px; font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .viewer-close-btn { margin-left: auto; background: none; border: none; cursor: pointer; color: #6b7280; display: flex; align-items: center; padding: 4px; border-radius: 6px; transition: color 0.15s; }
+    .viewer-close-btn:hover { color: #fff; }
+    .viewer-body { display: flex; flex: 1; overflow: hidden; }
+    .viewer-player-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .viewer-player { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    .viewer-player video { max-width: 100%; max-height: 100%; display: block; }
+    .viewer-player img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .viewer-info-bar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.06); }
+    .viewer-file-panel { width: 220px; flex-shrink: 0; border-left: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; overflow: hidden; }
+    .viewer-file-panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #6b7280; font-weight: 500; }
+    .viewer-file-grid { flex: 1; overflow-y: auto; padding: 10px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; align-content: start; }
+    .viewer-thumb { aspect-ratio: 1 / 1; border-radius: 6px; overflow: hidden; cursor: pointer; border: 2px solid transparent; background: rgba(255,255,255,0.04); display: flex; align-items: center; justify-content: center; transition: border-color 0.15s; }
+    .viewer-thumb:hover { border-color: rgba(255,255,255,0.2); }
+    .viewer-thumb.selected { border-color: #f59e0b; }
+    .viewer-thumb img, .viewer-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
   </style>
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased">
@@ -231,7 +307,7 @@
                 const atts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
                 const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
               %>
-                <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.body || attsLabel %>
+                <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
               <% } else { %>
                 <span class="text-gray-700">Say hello.</span>
               <% } %>
@@ -271,6 +347,7 @@
   </script>
   <%- include('_message-thread-script', { booking: typeof booking !== 'undefined' ? booking : null }) %>
   <%- include('_toast') %>
+  <%- include('_confirm-modal') %>
   <%- include('_notif-poll') %>
 </body>
 </html>

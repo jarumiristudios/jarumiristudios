@@ -219,22 +219,22 @@
             <% if (booking.filesDeleted) { %>
             <div class="pt-4 border-t border-white/5">
               <p class="text-sm font-medium mb-1 text-gray-400">Project deleted</p>
-              <p class="text-gray-500 text-sm">This project was deleted and its files have been permanently removed. Feel free to <a href="/hire" class="text-amber-400 hover:underline">submit a new request</a> or <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
+              <p class="text-gray-500 text-sm">This project was deleted and its files have been permanently removed. Feel free to <a href="/hire" class="text-amber-400 hover:underline">submit a new request</a> or <a href="/login" class="text-amber-400 hover:underline">sign in to message us</a> with any questions.</p>
             </div>
             <% } else if (booking.archived) { %>
             <div class="pt-4 border-t border-white/5">
               <p class="text-sm font-medium mb-1 text-gray-400">Project archived</p>
-              <p class="text-gray-500 text-sm">This project is no longer active. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
+              <p class="text-gray-500 text-sm">This project is no longer active. Feel free to <a href="/login" class="text-amber-400 hover:underline">sign in to message us</a> with any questions.</p>
             </div>
             <% } else if (booking.status === 'declined') { %>
             <div class="pt-4 border-t border-white/5">
               <p class="text-red-400 text-sm font-medium mb-1">Request declined</p>
-              <p class="text-gray-500 text-sm">Unfortunately we weren't able to take on this project. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> to discuss alternatives.</p>
+              <p class="text-gray-500 text-sm">Unfortunately we weren't able to take on this project. Feel free to <a href="/login" class="text-amber-400 hover:underline">sign in to message us</a> to discuss alternatives.</p>
             </div>
             <% } else if (booking.status === 'paused') { %>
             <div class="pt-4 border-t border-white/5">
               <p class="text-sm font-medium mb-1" style="color:#a78bfa;">Project paused</p>
-              <p class="text-gray-500 text-sm">This project has been temporarily paused. We'll resume work and keep you updated. Feel free to <a href="https://t.me/jarumiri" class="text-amber-400 hover:underline">reach out on Telegram</a> with any questions.</p>
+              <p class="text-gray-500 text-sm">This project has been temporarily paused. We'll resume work and keep you updated. Feel free to <a href="/login" class="text-amber-400 hover:underline">sign in to message us</a> with any questions.</p>
             </div>
             <% } else { %>
             <div class="pt-4 border-t border-white/5 space-y-0">
@@ -361,7 +361,7 @@
 
           <!-- Contact nudge -->
           <p class="text-center text-sm text-gray-600">
-            Questions? <a href="https://t.me/jarumiri" target="_blank" class="text-amber-400 hover:underline">Reach us on Telegram</a>
+            Questions? <a href="/login" class="text-amber-400 hover:underline">Sign in to message us</a>
           </p>
 
         </div>

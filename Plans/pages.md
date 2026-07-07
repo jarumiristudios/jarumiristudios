@@ -5,7 +5,7 @@
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Landing | Hero, reel, services, in-page `#pricing` section (Clip/Scene/Feature/Custom + add-ons), about, footer — no standalone `/pricing` route |
-| `/hire` | Request Form | Name, location, email, Telegram (optional, for large file transfers), services, pricing tier + add-ons, coupon code, project brief, media links, direct file upload (≤250MB, ≤20 files) |
+| `/hire` | Request Form | Name, location, email, Telegram (optional, for large file transfers), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links, direct file upload (≤250MB, ≤20 files for account holders; ≤25MB, ≤3 files for guests, 1 submission/24h) |
 | `GET /hire/success` | Post-submit | Shown to guests after submitting; offers inline account creation to track the booking going forward |
 | `POST /hire/coupon/validate` | — | AJAX coupon validation for the `/hire` form |
 | `POST /signup` | — | Inline signup from `/hire/success` — creates a `User`, links the just-submitted booking via `crCode`, logs in |
@@ -32,18 +32,23 @@
 | `GET /api/notifications/poll` | — | Polling endpoint for live unread count + new items since a timestamp |
 | `POST /api/notifications/mark-read` | — | Marks all notifications read (JSON response, used by poll-driven UI) |
 | `/dashboard/account` | Account Settings | Edit profile (name, location, Telegram, account type, external link), change password, delete account |
+| `/dashboard/messages` | Messages Inbox | List of every project thread with unread indicators, sorted by most recent activity |
+| `/dashboard/messages/:id` | Project Thread | Real-time chat (Socket.IO) with admin on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` (SPA-style thread switching) |
+| `POST /dashboard/messages/:id` | — | Send a chat message; up to 10 attachments and/or tagged existing project files per message; broadcasts `new-message` to the booking's socket room |
+| `GET /dashboard/messages/attachments/:filename` | — | Owning-client-only chat attachment download/view |
+| `POST /dashboard/messages/:id/:messageId/delete` | — | Soft-delete a message the client sent (clears body/attachments, tombstones the row); tagged project-file references are left untouched on disk |
 
 ## Admin (restricted to owner)
 
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/admin/login` / `/admin/logout` | — | Single shared admin password (`ADMIN_PASSWORD` env var), session-based |
-| `/admin/notifications` | Admin Notifications | Latest 200 `AdminNotification` records (currently nudges only); marks all read on view; bell badge + 15s poll + toast on every other admin page via `_notif-poll.ejs` partial |
+| `/admin/notifications` | Admin Notifications | Latest 200 `AdminNotification` records (`nudge`, `payment`, `new_booking`); marks all read on view; bell badge + 15s poll + toast on every other admin page via `_notif-poll.ejs` partial |
 | `GET /api/admin/notifications/poll` | — | Polling endpoint for live unread badge + new items since a timestamp (`?since=<ms>`) |
 | `POST /api/admin/notifications/mark-read` | — | Marks all admin notifications read (JSON response) |
 | `/admin` | Admin Dashboard | Active/Archived tab (`?view=archived`) bookings, server-side paginated (30/page) with debounced search (`q`/`field` query params) and status filter pills, total/pending counts |
 | `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes, payment card (deposit due date, delivery date once paid), media links, revision list (mark reviewed) |
-| `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`) |
+| `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`); server-enforced status gate (`isStatusChangeAllowed`) — `completed`/`declined` are terminal, forward moves capped at one step, backward moves and `declined` always allowed, `paused` only from `in-progress` |
 | `POST /admin/booking/:id/notes` | — | Append an admin note (`adminNotes` array, admin-only, not client-visible) |
 | `POST /admin/booking/:id/notes/:noteId/edit` | — | Edit the text of an existing admin note |
 | `POST /admin/booking/:id/notes/:noteId/delete` | — | Remove an admin note |
@@ -58,7 +63,16 @@
 | `POST /admin/booking/:id/deliverables/:fileId/delete` | — | Remove a single deliverable file from disk and the booking record |
 | `GET /admin/uploads/:filename` | — | Protected file serving (checks active and `_archive` paths, and both `uploadedFiles`/`deliverableFiles`); images inline, video/audio in-browser, download for all |
 | `/admin/coupons` | Coupon Manager | List/create/toggle-active/delete coupon codes (percent or fixed discount, optional expiry) |
-| `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus` on `invoice.payment_succeeded`, flips booking status, notifies client + admin |
+| `/admin/messages` | Messages Inbox | List of every project thread (one row per booking with a linked client) with unread indicators |
+| `/admin/messages/:id` | Project Thread | Real-time chat (Socket.IO) with the client on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` |
+| `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message |
+| `GET /admin/messages/attachments/:filename` | — | Admin-only chat attachment download/view |
+| `POST /admin/booking/:id/messages/:messageId/delete` | — | Soft-delete a message admin sent |
+| `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus` on `invoice.payment_succeeded`; deposit payment no longer auto-flips `status` (admin confirms manually, prompted by a `payment` `AdminNotification`); final payment still flips `status` to `completed`; notifies client + admin |
+
+## Real-Time Messaging (Socket.IO)
+
+Chat is a separate system from the `/dashboard`/`/admin` in-app `Notification`/`AdminNotification` alert feeds — it lives entirely under its own `/messages` inbox pages (not embedded on `dashboard-booking.ejs`/`admin/booking.ejs`), backed by a `Message` model (one document per chat message). Socket.IO rooms are scoped per booking (`project:<bookingId>`), authorized once at connect (admin: booking exists; client: owns booking); sending itself still goes through a normal session-checked HTTP POST (multer needs a real request to parse attachments) — the socket only broadcasts the saved message (`new-message` event) to whoever has that thread open. Unread-message badges are piggybacked onto the existing 15s notification-poll endpoints (`/api/notifications/poll`, `/api/admin/notifications/poll`) via a `messageItems` array, rather than a separate polling channel or persisted `Notification` documents.
 
 ## User Flow
 
@@ -72,8 +86,10 @@ Landing (#pricing) → /hire → Submit request (guest or logged-in client)
            Admin reviews in /admin → sets price + deposit due date → sends 30% deposit invoice via Stripe
            (status → accepted, acceptance email sent)
                        ↓
-           Client pays deposit before due date (Stripe webhook) → status → in-progress,
-           admin can now set a delivery date (shown on /track)
+           Client pays deposit before due date (Stripe webhook) → depositStatus → paid,
+           admin gets a "payment" AdminNotification and manually moves status → in-progress
+           (status no longer auto-advances on payment); admin can now set a delivery date
+           (shown on /track) — status is gated: forward moves capped at one step at a time
              — if unpaid past the due date, an hourly job (lib/invoiceExpiry.js) auto-declines
                the booking, voids the invoice, and emails client + admin instead
                        ↓

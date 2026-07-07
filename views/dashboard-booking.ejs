@@ -175,7 +175,7 @@
         </div>
         <div>
           <p class="text-sm font-semibold text-red-400">Request declined</p>
-          <p class="text-xs text-gray-500 mt-0.5">This project request was not accepted. Feel free to submit a new request or reach out via Telegram.</p>
+          <p class="text-xs text-gray-500 mt-0.5">This project request was not accepted. Feel free to submit a new request or reach out via Messages.</p>
         </div>
       </div>
       <% } else { %>
@@ -251,12 +251,6 @@
         <div>
           <p class="field-label">Location</p>
           <p class="field-value"><%= booking.location %></p>
-        </div>
-        <% } %>
-        <% if (booking.telegramHandle) { %>
-        <div>
-          <p class="field-label">Telegram</p>
-          <p class="field-value"><%= booking.telegramHandle %></p>
         </div>
         <% } %>
       </div>
@@ -411,6 +405,26 @@
     </div>
     <% } %>
 
+    <% const canAddFiles = !booking.archived && ['in-review', 'accepted', 'in-progress', 'paused'].includes(booking.status); %>
+    <% if (canAddFiles) { %>
+    <div class="section-card">
+      <h2 class="text-sm font-semibold text-white mb-1">Add files</h2>
+      <p class="text-xs text-gray-500 mb-4">Your project has moved past the initial review — you can now send over raw footage or additional reference files.</p>
+      <input type="file" id="extra-files-input" multiple accept="video/*,audio/*,image/*,.zip,.rar" class="hidden" />
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="button" onclick="document.getElementById('extra-files-input').click()"
+          class="px-5 py-2.5 rounded-full bg-white/5 border border-white/10 text-gray-300 text-sm font-semibold hover:text-white hover:border-white/25 transition-colors cursor-pointer">
+          Choose files
+        </button>
+        <span id="extra-files-label" class="text-xs text-gray-500">No files selected</span>
+        <button type="button" id="extra-files-submit" onclick="uploadExtraFiles('<%= booking._id %>')" disabled
+          class="px-5 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer">
+          Upload
+        </button>
+      </div>
+    </div>
+    <% } %>
+
     <!-- Project actions: pause / nudge / delete -->
     <div class="flex flex-wrap items-center gap-3">
       <% if (canManage && booking.status !== 'paused') { %>
@@ -561,7 +575,7 @@
     <% if (!booking.archived && (booking.status === 'accepted' || booking.status === 'in-progress')) { %>
     <div class="section-card">
       <h2 class="text-sm font-semibold text-white mb-1">Request a revision</h2>
-      <p class="text-gray-500 text-xs mb-4">Describe what you'd like changed. We'll review it and follow up via email or Telegram.</p>
+      <p class="text-gray-500 text-xs mb-4">Describe what you'd like changed. We'll review it and follow up via Messages.</p>
       <form action="/dashboard/booking/<%= booking._id %>/revision" method="POST">
         <textarea name="message" rows="4" placeholder="Describe the revision you need..." required></textarea>
         <button type="submit"
@@ -602,6 +616,39 @@
       fetch(`/dashboard/booking/${id}/pause`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
         .then(r => r.ok ? location.reload() : alert('Could not pause project.'))
         .catch(() => alert('Could not pause project.'));
+    }
+
+    let extraFiles = [];
+    document.getElementById('extra-files-input')?.addEventListener('change', (e) => {
+      extraFiles = Array.from(e.target.files);
+      document.getElementById('extra-files-label').textContent =
+        extraFiles.length ? `${extraFiles.length} file(s) selected` : 'No files selected';
+      document.getElementById('extra-files-submit').disabled = extraFiles.length === 0;
+    });
+
+    function uploadExtraFiles(id) {
+      const fd = new FormData();
+      extraFiles.forEach(f => fd.append('files', f));
+      const btn = document.getElementById('extra-files-submit');
+      btn.disabled = true;
+      btn.textContent = 'Uploading…';
+      fetch(`/dashboard/booking/${id}/upload-files`, { method: 'POST', body: fd })
+        .then(async (r) => {
+          const data = await r.json().catch(() => ({}));
+          if (r.ok) {
+            showToast('Files uploaded', `${data.count} file(s) added to your project.`);
+            setTimeout(() => location.reload(), 900);
+          } else {
+            showToast('Upload failed', data.error || 'Please try again.', 'error');
+            btn.disabled = false;
+            btn.textContent = 'Upload';
+          }
+        })
+        .catch(() => {
+          showToast('Upload failed', 'Please try again.', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Upload';
+        });
     }
 
     function nudgeAdmin(id, code) {

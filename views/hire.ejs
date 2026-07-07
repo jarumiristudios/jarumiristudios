@@ -258,9 +258,6 @@
           <a href="/" class="px-8 py-3.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
             Back to home
           </a>
-          <a href="https://t.me/jarumiri" target="_blank" class="px-8 py-3.5 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
-            Message us on Telegram
-          </a>
         </div>
 
         <% if (!locals.alreadyLinked) { %>
@@ -374,7 +371,6 @@
         <input type="hidden" name="name"           value="<%= locals.lastBooking.name %>" />
         <input type="hidden" name="email"          value="<%= locals.loggedInUser.email %>" />
         <input type="hidden" name="location"       value="<%= locals.lastBooking.location %>" />
-        <input type="hidden" name="telegramHandle" value="<%= locals.lastBooking.telegramHandle || '' %>" />
         <% } %>
 
         <!-- ── Step 1: Contact ── -->
@@ -395,10 +391,6 @@
               <label class="form-label" for="location">Location <span class="text-amber-400">*</span></label>
               <input class="form-input" type="text" id="location" name="location" placeholder="City, Country" autocomplete="country-name" value="<%= locals.formData ? formData.location : '' %>" />
               <p class="field-error hidden" id="err-location">Please enter your location.</p>
-            </div>
-            <div>
-              <label class="form-label" for="telegramHandle">Telegram handle <span class="text-gray-400 font-normal">(optional — for large file transfers)</span></label>
-              <input class="form-input" type="text" id="telegramHandle" name="telegramHandle" placeholder="@username" value="<%= locals.formData ? formData.telegramHandle : '' %>" />
             </div>
           </div>
 
@@ -618,6 +610,7 @@
           <div class="space-y-6">
 
             <!-- File upload drop zone -->
+            <% if (locals.canUploadNow) { %>
             <div>
               <label class="form-label">Upload files <span class="text-gray-400 font-normal">(video, audio, photo — max 250 MB each)</span></label>
               <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
@@ -633,6 +626,17 @@
               <div id="file-list" class="mt-3 space-y-2"></div>
               <p class="field-error hidden" id="err-files"></p>
             </div>
+            <% } else { %>
+            <div class="rounded-2xl border border-white/8 bg-white/3 px-5 py-5 flex items-start gap-3">
+              <svg class="w-5 h-5 text-amber-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 9h10.5a2.25 2.25 0 002.25-2.25v-6a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 12v6a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+              <div>
+                <p class="text-sm text-white font-medium mb-1">File uploads open once we start reviewing</p>
+                <p class="text-xs text-gray-400">To keep storage available for real projects, raw file uploads aren't accepted at submission for new clients. Add reference links below — we'll open uploads for this project once it moves to review.</p>
+              </div>
+            </div>
+            <% } %>
 
             <!-- Media links -->
             <div>
@@ -1249,18 +1253,21 @@
     })();
 
     // ── Submit loading state ──
+    const canUploadNow = <%= locals.canUploadNow ? 'true' : 'false' %>;
     const form = document.getElementById('booking-form');
     if (form) {
       form.addEventListener('submit', (e) => {
-        const errEl = document.getElementById('err-files');
-        const hasVideo = selectedFiles.some(f => f.type.startsWith('video/'));
-        if (!hasVideo) {
-          e.preventDefault();
-          errEl.textContent = 'Please upload at least one video file before submitting.';
-          errEl.classList.remove('hidden');
-          return;
+        if (canUploadNow) {
+          const errEl = document.getElementById('err-files');
+          const hasVideo = selectedFiles.some(f => f.type.startsWith('video/'));
+          if (!hasVideo) {
+            e.preventDefault();
+            errEl.textContent = 'Please upload at least one video file before submitting.';
+            errEl.classList.remove('hidden');
+            return;
+          }
+          errEl.classList.add('hidden');
         }
-        errEl.classList.add('hidden');
         const btn     = document.getElementById('submit-btn');
         const label   = document.getElementById('submit-label');
         const spinner = document.getElementById('submit-spinner');

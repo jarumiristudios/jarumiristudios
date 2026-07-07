@@ -5,6 +5,7 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const multer = require("multer");
+const sharp = require("sharp");
 const session = require("express-session");
 const cookieParser = require("cookie-parser");
 const http = require("http");
@@ -16,6 +17,7 @@ const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
 const AdminNotification = require("./models/AdminNotification");
 const Message = require("./models/Message");
+const LoginAttempt = require("./models/LoginAttempt");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 
@@ -274,6 +276,22 @@ function trySendStoredFile(res, crCode, type, filename) {
   return false;
 }
 
+// Renames a stored file from one files/<folder>/ subfolder to another, checking the active
+// path then the _archive path (same convention as trySendStoredFile) and staying within
+// whichever one the file is actually found in. Returns true on success.
+function moveStoredFile(crCode, fromFolder, toFolder, filename) {
+  for (const base of [path.join(__dirname, "uploads", crCode), path.join(__dirname, "uploads", "_archive", crCode)]) {
+    const from = path.join(base, "files", fromFolder, filename);
+    if (fs.existsSync(from)) {
+      const toDir = path.join(base, "files", toFolder);
+      fs.mkdirSync(toDir, { recursive: true });
+      fs.renameSync(from, path.join(toDir, filename));
+      return true;
+    }
+  }
+  return false;
+}
+
 const CR_CODE_MAX_ATTEMPTS = 10;
 
 async function generateCrCode() {
@@ -307,8 +325,6 @@ function assignVisitorId(req, res, next) {
   next();
 }
 
-const GUEST_MAX_FILES = 3;
-const GUEST_MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB
 const MEMBER_MAX_FILES = 20;
 const MEMBER_MAX_FILE_SIZE = 250 * 1024 * 1024; // 250 MB
 const GUEST_SUBMISSION_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -325,9 +341,19 @@ async function enforceGuestSubmissionQuota(req, res, next) {
       error: "You've already submitted a request in the last 24 hours. Create a free account for unlimited submissions, or check back later.",
       loggedInUser: null,
       lastBooking: null,
+      canUploadNow: false,
     });
   }
   next();
+}
+
+// Raw-file uploads at initial submission are reserved for clients with a proven track
+// record (a past booking that actually paid a deposit) — everyone else, including guests
+// (who have no durable identity to build that record on), submits brief + links only and
+// gets file access once a human has reviewed the request (see FILE_ADD_ALLOWED_STATUSES).
+async function hasTrustedDepositHistory(userId) {
+  if (!userId) return false;
+  return BookingRequest.exists({ clientId: userId, depositStatus: "paid" });
 }
 
 async function preCrCode(req, res, next) {
@@ -364,7 +390,6 @@ function writeBookingTxt(booking) {
     `  Email:    ${booking.email}`,
     `  Location: ${booking.location}`,
   ];
-  if (booking.telegramHandle) lines.push(`  Telegram: ${booking.telegramHandle}`);
   lines.push(
     "",
     "PROJECT",
@@ -438,6 +463,25 @@ function messagePreview(body, attachments) {
   return "";
 }
 
+// Soft-deletes a message: clears its body/attachments (leaving a tombstone the UI renders as
+// "This message was deleted") and removes any chat-uploaded files from disk. Attachments tagged
+// from a project's own files ("uploaded"/"video"/etc. folders, not "chat") are left on disk since
+// they still belong to the project regardless of this message being deleted.
+async function softDeleteMessage(message) {
+  if (message.deleted) return;
+  messageAttachments(message)
+    .filter((a) => (a.folder || "chat") === "chat")
+    .forEach((a) => {
+      fs.rm(path.join(__dirname, "uploads", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
+      fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
+    });
+  message.deleted = true;
+  message.body = "";
+  message.attachment = undefined;
+  message.attachments = [];
+  await message.save();
+}
+
 // Builds a chat attachment that references an already-uploaded project file instead of a fresh
 // composer upload, so tagging a file in chat doesn't duplicate it on disk. Returns null if the
 // file doesn't exist on the booking, or (for clients) if it's a deliverable that isn't unlocked yet.
@@ -452,6 +496,7 @@ function resolveTaggedAttachment(booking, source, fileId, isClient) {
     storedName: file.storedName,
     size: file.size,
     mimetype: file.mimetype,
+    blurDataUrl: file.blurDataUrl,
     folder,
   };
 }
@@ -476,16 +521,63 @@ function resolveTaggedAttachments(booking, taggedFilesJson, isClient) {
   return attachments;
 }
 
-// Permanently removes uploaded media for a booking while keeping booking.txt as a record
+// A file just written by multer can briefly be held open (by Windows Defender's on-write scan,
+// in observed testing) — retrying a couple of times a beat apart clears it without giving up
+// on files that are only transiently busy, not actually stuck.
+function retrySync(fn, attempts = 4, delayMs = 250) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return fn();
+    } catch (err) {
+      if (attempt === attempts) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delayMs);
+    }
+  }
+}
+
+// Permanently removes uploaded media for a booking while keeping booking.txt as a record.
+// Synchronous and awaited-in-order by archiveAndWipeBookingFiles below — the async fire-and-forget
+// version of this raced the folder rename that follows it (rm still mid-flight on the "files"
+// subtree when rename tried to move the parent folder), which intermittently lost the race and
+// left the folder sitting in the active uploads/ path, wiped but never archived.
 function hardDeleteBookingFiles(crCode) {
   if (!crCode) return;
-  fs.rm(path.join(__dirname, "uploads", crCode, "files"), { recursive: true, force: true }, () => {});
-  fs.rm(path.join(__dirname, "uploads", "_archive", crCode, "files"), { recursive: true, force: true }, () => {});
+  fs.rmSync(path.join(__dirname, "uploads", crCode, "files"), { recursive: true, force: true });
+  fs.rmSync(path.join(__dirname, "uploads", "_archive", crCode, "files"), { recursive: true, force: true });
+}
+
+// Client-initiated "delete" — unlike admin archive (which just hides a project, files intact
+// and restorable), this is meant to be irreversible: media is wiped and only the booking.txt
+// record survives, tucked into _archive alongside admin-archived projects.
+function archiveAndWipeBookingFiles(crCode) {
+  if (!crCode) return;
+  try {
+    retrySync(() => hardDeleteBookingFiles(crCode));
+    const archiveDir = path.join(__dirname, "uploads", "_archive");
+    fs.mkdirSync(archiveDir, { recursive: true });
+    retrySync(() => fs.renameSync(path.join(__dirname, "uploads", crCode), path.join(archiveDir, crCode)));
+  } catch (err) {
+    console.error(`Failed to archive/wipe files for booking ${crCode}:`, err.message);
+  }
 }
 
 function uniqueFilename(originalname) {
   const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
   return `${unique}${path.extname(originalname)}`;
+}
+
+// Tiny (24px-wide) heavily-blurred JPEG preview, inlined as a data URL, so a not-yet-downloaded
+// image attachment can show a hint of its content behind the download prompt without the
+// receiver's browser fetching the full file. Images only — no video frame extraction (no ffmpeg
+// dependency in this project). Never throws: a failed/unsupported source just yields no preview.
+async function generateBlurDataUrl(filePath, mimetype) {
+  if (!/^image\//i.test(mimetype)) return undefined;
+  try {
+    const buf = await sharp(filePath).resize(32, 32, { fit: "inside" }).blur(0.5).jpeg({ quality: 50 }).toBuffer();
+    return `data:image/jpeg;base64,${buf.toString("base64")}`;
+  } catch {
+    return undefined;
+  }
 }
 
 // Rejects file types that browsers will render/execute as an active document (HTML, SVG) when
@@ -535,15 +627,6 @@ const upload = multer({
   limits: { fileSize: MEMBER_MAX_FILE_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
-// Guest tier: same storage/fileFilter, smaller per-file cap — multer's limits are fixed
-// at construction, so a distinct instance is needed for the size restriction (file count
-// is just a different argument to .array("files", N) at the call site).
-const uploadGuest = multer({
-  storage,
-  limits: { fileSize: GUEST_MAX_FILE_SIZE },
-  fileFilter: restrictToAllowedMediaTypes,
-});
-
 // Admin-uploaded final deliverables — separate storage so they never mix with client-submitted raw files
 const deliverableStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -561,7 +644,7 @@ const deliverableUpload = multer({
 
 // Chat attachments — quick references/previews, not raw footage delivery (that's what the
 // main upload system above is for), so a smaller cap than member uploads.
-const CHAT_ATTACHMENT_MAX_SIZE = 25 * 1024 * 1024; // 25 MB
+const CHAT_ATTACHMENT_MAX_SIZE = 1024 * 1024 * 1024; // 1 GB
 const CHAT_MAX_ATTACHMENTS = 10;
 const chatStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -622,14 +705,18 @@ app.get("/track", async (req, res) => {
 });
 
 app.get("/hire", async (req, res) => {
-  if (!req.session.userId) return res.render("hire");
+  if (!req.session.userId) return res.render("hire", { canUploadNow: false });
   const user = await User.findById(req.session.userId);
-  const lastBooking = user?.bookings?.length
-    ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location telegramHandle")
-    : null;
+  const [lastBooking, canUploadNow] = await Promise.all([
+    user?.bookings?.length
+      ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
+      : null,
+    hasTrustedDepositHistory(req.session.userId),
+  ]);
   res.render("hire", {
     loggedInUser: { email: user.email },
     lastBooking,
+    canUploadNow,
   });
 });
 
@@ -671,26 +758,27 @@ app.post("/hire/coupon/validate", async (req, res) => {
   });
 });
 
-app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
-  const isGuest = !req.session.userId;
-  const activeUpload = isGuest ? uploadGuest : upload;
-  const maxFiles = isGuest ? GUEST_MAX_FILES : MEMBER_MAX_FILES;
-  activeUpload.array("files", maxFiles)(req, res, (err) => {
+app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next) => {
+  const canUploadNow = await hasTrustedDepositHistory(req.session.userId);
+  req.canUploadNow = canUploadNow;
+  const maxFiles = canUploadNow ? MEMBER_MAX_FILES : 0;
+  upload.array("files", maxFiles)(req, res, (err) => {
     if (!err) return next();
     const message = err.code === "LIMIT_FILE_SIZE"
-      ? isGuest ? `One or more files exceed the ${GUEST_MAX_FILE_SIZE / 1024 / 1024}MB guest limit. Create a free account for larger uploads.`
-                : "One or more files exceed the 250MB limit."
+      ? "One or more files exceed the 250MB limit."
       : err.code === "LIMIT_UNEXPECTED_FILE"
-      ? isGuest ? `Guests can upload up to ${GUEST_MAX_FILES} files at a time. Create a free account to upload more.`
-                : "You can upload up to 20 files at a time."
+      ? canUploadNow
+        ? "You can upload up to 20 files at a time."
+        : "File uploads aren't available yet for new clients — add reference links below instead. We'll open uploads for this project once it moves to review."
       : err.message || "Upload failed.";
-    return res.render("hire", { error: message, formData: req.body, loggedInUser: null, lastBooking: null });
+    return res.render("hire", { error: message, formData: req.body, loggedInUser: null, lastBooking: null, canUploadNow });
   });
 }, async (req, res) => {
-  const { name, email, location, telegramHandle, pricingTier, budget, projectBrief } = req.body;
+  const { name, email, location, pricingTier, budget, projectBrief } = req.body;
   const serviceType = [].concat(req.body.serviceType || []).filter(Boolean);
   const mediaLinks  = [].concat(req.body.mediaLinks  || []).filter(Boolean);
   const addOns      = [].concat(req.body.addOns      || []).filter(Boolean);
+  const canUploadNow = req.canUploadNow;
 
   // Server-side validation
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -702,7 +790,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
       if (user) {
         loggedInUser = { email: user.email };
         lastBooking = user.bookings?.length
-          ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location telegramHandle")
+          ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
           : null;
       }
     }
@@ -711,16 +799,18 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
       formData: req.body,
       loggedInUser,
       lastBooking,
+      canUploadNow,
     });
   }
 
   try {
-    const uploadedFiles = (req.files || []).map((f) => ({
+    const uploadedFiles = await Promise.all((req.files || []).map(async (f) => ({
       originalName: f.originalname,
       storedName: f.filename,
       size: f.size,
       mimetype: f.mimetype,
-    }));
+      blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+    })));
 
     // Validate coupon server-side
     const basePrice  = TIER_PRICES[pricingTier] || 0;
@@ -750,7 +840,6 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
       name,
       email,
       location,
-      telegramHandle,
       serviceType,
       pricingTier,
       addOns,
@@ -801,6 +890,18 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, (req, res, next) => {
   }
 });
 
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+
+// Failed-login lockout, same rolling-window pattern as enforceGuestSubmissionQuota
+// and the nudge limiter above. /login keys on the attempted email; /admin/login has
+// no email to key on, so it uses the visitor cookie instead (see assignVisitorId).
+async function isLoginLocked(key) {
+  const since = new Date(Date.now() - LOGIN_ATTEMPT_WINDOW_MS);
+  const count = await LoginAttempt.countDocuments({ key, createdAt: { $gte: since } });
+  return count >= LOGIN_MAX_ATTEMPTS;
+}
+
 // ── Client auth routes ──
 app.get("/login", (req, res) => {
   if (req.session.userId) return res.redirect("/dashboard");
@@ -809,10 +910,18 @@ app.get("/login", (req, res) => {
 
 app.post("/login", async (req, res) => {
   const { email, password, next, cr } = req.body;
+  const attemptKey = `login:${email?.trim().toLowerCase() || ""}`;
+
+  if (await isLoginLocked(attemptKey)) {
+    return res.render("login", { error: "Too many failed attempts. Please try again in a few minutes.", next: next || "/dashboard", cr });
+  }
+
   const user = await User.findOne({ email: email?.trim().toLowerCase() });
   if (!user || !(await user.verifyPassword(password))) {
+    await LoginAttempt.create({ key: attemptKey });
     return res.render("login", { error: "Invalid email or password.", next: next || "/dashboard", cr });
   }
+  await LoginAttempt.deleteMany({ key: attemptKey });
   req.session.userId = user._id.toString();
 
   // Link a just-submitted booking if a crCode was passed through
@@ -852,7 +961,6 @@ app.post("/signup", async (req, res) => {
       password,
       name: booking.name || "",
       location: booking.location || "",
-      telegramHandle: booking.telegramHandle || "",
       bookings: [booking._id],
     });
     await user.save();
@@ -904,7 +1012,7 @@ app.get("/dashboard/account", requireClient, async (req, res) => {
 });
 
 app.post("/dashboard/account/profile", requireClient, async (req, res) => {
-  const { name, location, telegramHandle, accountType, externalLink } = req.body;
+  const { name, location, accountType, externalLink } = req.body;
   if (!name?.trim() || !location?.trim()) {
     const user = await User.findById(req.session.userId);
     return res.render("dashboard-account", { user, error: "Name and location are required.", success: null });
@@ -914,7 +1022,6 @@ app.post("/dashboard/account/profile", requireClient, async (req, res) => {
   await User.findByIdAndUpdate(req.session.userId, {
     name: name.trim(),
     location: location.trim(),
-    telegramHandle: (telegramHandle || "").trim(),
     accountType: (accountType || "").trim(),
     externalLink: safeLink,
   });
@@ -949,6 +1056,17 @@ app.post("/dashboard/account/delete", requireClient, async (req, res) => {
   if (!confirmEmail || confirmEmail.trim().toLowerCase() !== user.email) {
     return res.render("dashboard-account", { user, success: null, error: "Email confirmation didn't match. Account not deleted." });
   }
+
+  // Deleting the account cascades exactly like deleting each project individually — same
+  // irreversible file wipe — since an orphaned clientId would otherwise leave every project's
+  // raw footage and deliverables stranded on disk with no owner able to reach or clean them up.
+  const bookings = await BookingRequest.find({ clientId: user._id, filesDeleted: { $ne: true } }).select("crCode");
+  await BookingRequest.updateMany(
+    { clientId: user._id },
+    { filesDeleted: true, uploadedFiles: [], deliverableFiles: [], archived: true }
+  );
+  bookings.forEach((b) => archiveAndWipeBookingFiles(b.crCode));
+
   await User.findByIdAndDelete(user._id);
   req.session.destroy(() => res.redirect("/"));
 });
@@ -960,7 +1078,8 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
     return;
   }
   const profileComplete = !!(user.name?.trim() && user.location?.trim());
-  res.render("dashboard-new", { user, profileComplete });
+  const canUploadNow = await hasTrustedDepositHistory(req.session.userId);
+  res.render("dashboard-new", { user, profileComplete, canUploadNow });
 });
 
 app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
@@ -977,12 +1096,7 @@ app.post("/dashboard/booking/:id/delete", requireClient, async (req, res) => {
     { _id: req.params.id, clientId: req.session.userId },
     { filesDeleted: true, uploadedFiles: [], deliverableFiles: [], archived: true }
   );
-  if (booking?.crCode) {
-    hardDeleteBookingFiles(booking.crCode);
-    const archiveDir = path.join(__dirname, "uploads", "_archive");
-    fs.mkdirSync(archiveDir, { recursive: true });
-    fs.rename(path.join(__dirname, "uploads", booking.crCode), path.join(archiveDir, booking.crCode), () => {});
-  }
+  archiveAndWipeBookingFiles(booking?.crCode);
   res.redirect("/dashboard");
 });
 
@@ -1040,6 +1154,51 @@ app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
   res.redirect(`/dashboard/booking/${req.params.id}`);
 });
 
+// Once a booking has actually been looked at (past pending) the client is trusted to add raw
+// files — mirrors the trust gate on /hire but keyed on this project's own status instead of
+// the client's history, since even a first-time client earns that trust once reviewed.
+const FILE_ADD_ALLOWED_STATUSES = ["in-review", "accepted", "in-progress", "paused"];
+
+app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, next) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId })
+    .select("crCode archived status name uploadedFiles");
+  if (!booking) return res.status(404).json({ error: "Project not found." });
+  if (booking.archived || !FILE_ADD_ALLOWED_STATUSES.includes(booking.status)) {
+    return res.status(403).json({ error: "Files can only be added once your project has moved past the initial review stage." });
+  }
+  req.crCode = booking.crCode;
+  req.booking = booking;
+  upload.array("files", MEMBER_MAX_FILES)(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === "LIMIT_FILE_SIZE" ? "One or more files exceed the 250MB limit."
+      : err.code === "LIMIT_UNEXPECTED_FILE" ? "You can upload up to 20 files at a time."
+      : err.message || "Upload failed.";
+    return res.status(400).json({ error: message });
+  });
+}, async (req, res) => {
+  if (!req.files?.length) return res.status(400).json({ error: "No files received." });
+  const newFiles = await Promise.all(req.files.map(async (f) => ({
+    originalName: f.originalname,
+    storedName: f.filename,
+    size: f.size,
+    mimetype: f.mimetype,
+    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+  })));
+
+  const booking = req.booking;
+  booking.uploadedFiles.push(...newFiles);
+  await booking.save();
+
+  AdminNotification.create({
+    bookingId: booking._id,
+    crCode: booking.crCode,
+    type: "files_added",
+    message: `${booking.name} added ${newFiles.length} file${newFiles.length > 1 ? "s" : ""} to project ${booking.crCode}.`,
+  }).catch((err) => console.error("Error creating admin files-added notification:", err.message));
+
+  res.json({ ok: true, count: newFiles.length });
+});
+
 // ── Admin routes ──
 
 // Inject unread admin notification count into all /admin views
@@ -1060,11 +1219,19 @@ app.get("/admin/login", (req, res) => {
   res.render("admin/login");
 });
 
-app.post("/admin/login", (req, res) => {
+app.post("/admin/login", async (req, res) => {
+  const attemptKey = `admin:${req.visitorId}`;
+
+  if (await isLoginLocked(attemptKey)) {
+    return res.render("admin/login", { error: "Too many failed attempts. Please try again in a few minutes." });
+  }
+
   if (req.body.password === process.env.ADMIN_PASSWORD) {
+    await LoginAttempt.deleteMany({ key: attemptKey });
     req.session.isAdmin = true;
     return res.redirect("/admin");
   }
+  await LoginAttempt.create({ key: attemptKey });
   res.render("admin/login", { error: "Incorrect password." });
 });
 
@@ -1359,9 +1526,10 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
 
-  const attachments = (req.files || []).map((f) => ({
+  const attachments = await Promise.all((req.files || []).map(async (f) => ({
     originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
-  }));
+    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+  })));
   const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, false);
   if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
   attachments.push(...tagged);
@@ -1379,6 +1547,14 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
 
   io.to(chatRoom(req.params.id)).emit("new-message", message);
   res.json({ message });
+});
+
+app.post("/admin/booking/:id/messages/:messageId/delete", requireAdmin, async (req, res) => {
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: req.params.id, senderRole: "admin" });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  await softDeleteMessage(message);
+  io.to(chatRoom(req.params.id)).emit("message-deleted", { messageId: message._id, bookingId: req.params.id });
+  res.json({ ok: true });
 });
 
 async function adminMessageThreads() {
@@ -1423,8 +1599,41 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
   if (!message) return res.sendStatus(404);
   const att = messageAttachments(message).find((a) => a.storedName === filename);
   if (!att) return res.sendStatus(404);
+  if (message.senderRole !== "admin" && !att.downloaded) {
+    att.downloaded = true;
+    await message.save();
+  }
   if (trySendStoredFile(res, message.crCode, att.folder || "chat", filename)) return;
   res.sendStatus(404);
+});
+
+// Promotes a chat-shared file (uploaded fresh in the composer, not tagged from existing project
+// files) into the booking's official uploadedFiles — moves it out of files/chat/ into the
+// matching files/<type>/ subfolder and updates the message's own record of where it lives.
+app.post("/admin/messages/attachments/:filename/save-to-project", requireAdmin, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({ $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }] });
+  if (!message) return res.sendStatus(404);
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  if (att.folder && att.folder !== "chat") return res.status(400).json({ error: "Already in project files." });
+
+  const booking = await BookingRequest.findById(message.bookingId);
+  if (!booking) return res.sendStatus(404);
+  if (booking.archived) return res.status(403).json({ error: "This project is archived." });
+
+  const type = fileTypeFromMime(att.mimetype);
+  if (!moveStoredFile(message.crCode, "chat", type, filename)) {
+    return res.status(404).json({ error: "File not found on disk." });
+  }
+
+  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl });
+  await booking.save();
+
+  att.folder = type;
+  await message.save();
+
+  res.json({ ok: true });
 });
 
 async function notifyStatusChange(bookings, newStatus) {
@@ -1497,12 +1706,13 @@ app.post("/admin/booking/:id/deliverables", requireAdmin, attachCrCode, (req, re
     res.redirect(`/admin/booking/${req.params.id}?deliverError=${encodeURIComponent(message)}`);
   });
 }, async (req, res) => {
-  const newFiles = (req.files || []).map((f) => ({
+  const newFiles = await Promise.all((req.files || []).map(async (f) => ({
     originalName: f.originalname,
     storedName: f.filename,
     size: f.size,
     mimetype: f.mimetype,
-  }));
+    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+  })));
   if (newFiles.length === 0) {
     return res.redirect(`/admin/booking/${req.params.id}?deliverError=${encodeURIComponent("No files were selected.")}`);
   }
@@ -1991,9 +2201,10 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
 }, async (req, res) => {
   const body = (req.body.body || "").trim();
 
-  const attachments = (req.files || []).map((f) => ({
+  const attachments = await Promise.all((req.files || []).map(async (f) => ({
     originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
-  }));
+    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+  })));
   const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, true);
   if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
   attachments.push(...tagged);
@@ -2013,6 +2224,16 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
   res.json({ message });
 });
 
+app.post("/dashboard/messages/:id/:messageId/delete", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("_id");
+  if (!booking) return res.status(404).json({ error: "Project not found." });
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: booking._id, senderRole: "client" });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  await softDeleteMessage(message);
+  io.to(chatRoom(req.params.id)).emit("message-deleted", { messageId: message._id, bookingId: req.params.id });
+  res.json({ ok: true });
+});
+
 app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, res) => {
   const filename = path.basename(req.params.filename);
   const message = await Message.findOne({
@@ -2027,8 +2248,42 @@ app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, 
     const booking = await BookingRequest.findById(message.bookingId).select("status");
     if (!booking?.deliverablesUnlocked) return res.sendStatus(403);
   }
+  if (message.senderRole !== "client" && !att.downloaded) {
+    att.downloaded = true;
+    await message.save();
+  }
   if (trySendStoredFile(res, message.crCode, folder, filename)) return;
   res.sendStatus(404);
+});
+
+// Client-side equivalent of the admin save-to-project route above.
+app.post("/dashboard/messages/attachments/:filename/save-to-project", requireClient, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({
+    clientId: req.session.userId,
+    $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }],
+  });
+  if (!message) return res.sendStatus(403);
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  if (att.folder && att.folder !== "chat") return res.status(400).json({ error: "Already in project files." });
+
+  const booking = await BookingRequest.findById(message.bookingId);
+  if (!booking) return res.sendStatus(404);
+  if (booking.archived) return res.status(403).json({ error: "This project is archived." });
+
+  const type = fileTypeFromMime(att.mimetype);
+  if (!moveStoredFile(message.crCode, "chat", type, filename)) {
+    return res.status(404).json({ error: "File not found on disk." });
+  }
+
+  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl });
+  await booking.save();
+
+  att.folder = type;
+  await message.save();
+
+  res.json({ ok: true });
 });
 
 app.get("/api/notifications/poll", requireClient, async (req, res) => {

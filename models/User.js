@@ -7,7 +7,6 @@ const userSchema = new mongoose.Schema(
     password:       { type: String, required: true },
     name:           { type: String, default: "" },
     location:       { type: String, default: "" },
-    telegramHandle: { type: String, default: "" },
     accountType:    { type: String, default: "" },
     externalLink:   { type: String, default: "" },
     bookings:       [{ type: mongoose.Schema.Types.ObjectId, ref: "BookingRequest" }],
