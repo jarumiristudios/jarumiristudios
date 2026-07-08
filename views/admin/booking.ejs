@@ -352,6 +352,34 @@
           </div>
         </div>
         <% } %>
+
+        <!-- External links -->
+        <% if (booking.platforms && booking.platforms.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">External links</h2>
+          <div class="space-y-2">
+            <% const PLATFORM_BASES = { Instagram: 'https://instagram.com/', Twitter: 'https://x.com/', TikTok: 'https://tiktok.com/', OnlyFans: 'https://onlyfans.com/', Fansly: 'https://fansly.com/', Pornhub: 'https://pornhub.com/', MannyVids: 'https://manyvids.com/' }; %>
+            <% booking.platforms.forEach(p => { %>
+            <% const isUrl = /^https?:\/\//i.test(p.handle); %>
+            <% const bare = p.handle.replace(/^@/, ''); %>
+            <% const handlePath = p.platform === 'TikTok' ? `@${bare}` : bare; %>
+            <% const href = isUrl ? p.handle : (PLATFORM_BASES[p.platform] ? PLATFORM_BASES[p.platform] + handlePath : null); %>
+            <% if (href) { %>
+            <a href="<%= href %>" target="_blank" rel="noopener"
+              class="flex items-center gap-2 text-sm text-amber-400 hover:text-amber-300 transition-colors group">
+              <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+              <span class="truncate group-hover:underline"><%= p.handle %></span>
+            </a>
+            <% } else { %>
+            <div class="flex items-center gap-2 text-sm text-gray-300">
+              <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+              <span class="truncate"><%= p.handle %></span>
+            </div>
+            <% } %>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
         <!-- Revision requests -->
         <% if (booking.revisions && booking.revisions.length > 0) { %>
         <div class="card">
@@ -442,6 +470,12 @@
               <p class="detail-label">Location</p>
               <p class="detail-value"><%= booking.location %></p>
             </div>
+            <% if (booking.clientType) { %>
+            <div>
+              <p class="detail-label">Client type</p>
+              <p class="detail-value"><%= booking.clientType %></p>
+            </div>
+            <% } %>
           </div>
         </div>
 
@@ -624,7 +658,7 @@
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-3">Quick actions</h2>
           <div class="space-y-2">
-            <% if (booking.clientId) { %>
+            <% if (booking.clientId && booking.chatUnlocked) { %>
             <a href="/admin/messages/<%= booking._id %>"
               class="flex items-center gap-2.5 text-sm text-gray-400 hover:text-white transition-colors py-1">
               <iconify-icon icon="material-symbols-light:chat-outline" width="16" height="16"></iconify-icon>
@@ -633,6 +667,12 @@
               <span style="display:flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;"><%= bookingUnreadMessageCount %></span>
               <% } %>
             </a>
+            <% } else if (booking.clientId) { %>
+            <span title="Chat opens once this project is accepted."
+              class="flex items-center gap-2.5 text-sm text-gray-400 opacity-40 cursor-not-allowed py-1">
+              <iconify-icon icon="material-symbols-light:chat-outline" width="16" height="16"></iconify-icon>
+              Messages
+            </span>
             <% } %>
             <a href="mailto:<%= booking.email %>?subject=Re: <%= booking.crCode %> — Your Jarumiri Studios Request"
               class="flex items-center gap-2.5 text-sm text-gray-400 hover:text-white transition-colors py-1">

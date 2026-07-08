@@ -23,7 +23,8 @@
     }
     .notif-row:last-child { border-bottom: none; }
     .notif-row.unread { background: rgba(255,255,255,0.015); }
-    .notif-row:hover { background: rgba(255,255,255,0.03); }
+    .notif-row.read { opacity: 0.82; }
+    .notif-row:hover { background: rgba(255,255,255,0.03); opacity: 1; }
 
     .notif-icon {
       width: 34px; height: 34px; border-radius: 50%;
@@ -105,7 +106,7 @@
         else if (diffDays < 7)   timeLabel = diffDays + 'd ago';
         else                     timeLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       %>
-      <div class="notif-row <%= isUnread ? 'unread' : '' %>">
+      <div class="notif-row <%= isUnread ? 'unread' : 'read' %>">
         <div class="notif-icon <%= ic.cls %>">
           <iconify-icon icon="<%= ic.icon %>" width="17" height="17" style="color:<%= ic.color %>"></iconify-icon>
         </div>

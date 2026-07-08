@@ -309,7 +309,7 @@
               %>
                 <%= t.lastMessage.senderRole === 'admin' ? 'Studio: ' : 'You: ' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
               <% } else { %>
-                <span class="text-gray-700">Say hello.</span>
+                <span class="<%= t.booking.chatUnlocked ? 'text-gray-700' : 'text-gray-500' %>"><%= t.booking.chatUnlocked ? 'Say hello.' : 'Chat opens once accepted.' %></span>
               <% } %>
             </p>
           </div>

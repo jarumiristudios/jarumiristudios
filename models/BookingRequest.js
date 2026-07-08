@@ -7,6 +7,11 @@ const bookingRequestSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, trim: true, lowercase: true },
     location: { type: String, required: true, trim: true },
+    clientType: {
+      type: String,
+      required: true,
+      enum: ["Independent Creator", "Agency", "Studio", "Brand / Business", "Other"],
+    },
     serviceType: {
       type: [String],
       enum: ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"],
@@ -21,6 +26,15 @@ const bookingRequestSchema = new mongoose.Schema(
     budget: { type: String, trim: true },
     projectBrief: { type: String, required: true, trim: true, maxlength: 2000 },
     mediaLinks: [{ type: String, trim: true }],
+    platforms: {
+      type: [
+        {
+          platform: { type: String, enum: ["Instagram", "Twitter", "TikTok", "OnlyFans", "Fansly", "Fanview", "MannyVids", "Pornhub", "Other"], required: true },
+          handle: { type: String, trim: true, required: true },
+        },
+      ],
+      validate: { validator: (v) => v.length >= 1 && v.length <= 3, message: "Add between 1 and 3 external links." },
+    },
     uploadedFiles: [
       {
         originalName: String,
@@ -92,6 +106,12 @@ const bookingRequestSchema = new mongoose.Schema(
 // since the underlying rule (currently just status) is likely to grow conditions later.
 bookingRequestSchema.virtual("deliverablesUnlocked").get(function () {
   return this.status === "completed";
+});
+
+// Chat opens once a project has been accepted and stays open through the rest of its
+// lifecycle (in-progress/completed/paused) — pending/in-review/declined stay locked.
+bookingRequestSchema.virtual("chatUnlocked").get(function () {
+  return ["accepted", "in-progress", "completed", "paused"].includes(this.status);
 });
 
 bookingRequestSchema.pre("save", async function () {

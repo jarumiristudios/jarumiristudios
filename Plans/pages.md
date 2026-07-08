@@ -5,7 +5,7 @@
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Landing | Hero, reel, services, in-page `#pricing` section (Clip/Scene/Feature/Custom + add-ons), about, footer — no standalone `/pricing` route |
-| `/hire` | Request Form | Name, location, email, Telegram (optional, for large file transfers), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links, direct file upload (≤250MB, ≤20 files for account holders; ≤25MB, ≤3 files for guests, 1 submission/24h) |
+| `/hire` | Request Form | Name, location, email, client type (Independent Creator/Agency/Studio/Brand-Business/Other, required), 1–3 required external platform links (Instagram/Twitter/TikTok/OnlyFans/Fansly/Fanview/MannyVids/Pornhub/Other), services, pricing tier + add-ons, coupon codes (up to 3, stackable/compounding), project brief, media links (only shown once upload-trusted), direct file upload gated on `hasTrustedDepositHistory` (a prior paid booking) — untrusted first-time clients submit with no direct upload at all, large files go through Messages post-signup instead |
 | `GET /hire/success` | Post-submit | Shown to guests after submitting; offers inline account creation to track the booking going forward |
 | `POST /hire/coupon/validate` | — | AJAX coupon validation for the `/hire` form |
 | `POST /signup` | — | Inline signup from `/hire/success` — creates a `User`, links the just-submitted booking via `crCode`, logs in |
@@ -31,10 +31,10 @@
 | `POST /dashboard/notifications/mark-all-read` | — | Marks all notifications read, redirects back to the notifications page |
 | `GET /api/notifications/poll` | — | Polling endpoint for live unread count + new items since a timestamp |
 | `POST /api/notifications/mark-read` | — | Marks all notifications read (JSON response, used by poll-driven UI) |
-| `/dashboard/account` | Account Settings | Edit profile (name, location, Telegram, account type, external link), change password, delete account |
+| `/dashboard/account` | Account Settings | Edit profile (name, location, account type, external website/portfolio link — both optional, distinct from the per-booking `clientType`/`platforms` collected on `/hire`), change password, delete account |
 | `/dashboard/messages` | Messages Inbox | List of every project thread with unread indicators, sorted by most recent activity |
-| `/dashboard/messages/:id` | Project Thread | Real-time chat (Socket.IO) with admin on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` (SPA-style thread switching) |
-| `POST /dashboard/messages/:id` | — | Send a chat message; up to 10 attachments and/or tagged existing project files per message; broadcasts `new-message` to the booking's socket room |
+| `/dashboard/messages/:id` | Project Thread | Real-time chat (Socket.IO) with admin on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` (SPA-style thread switching); composer disabled with an explanatory placeholder until `chatUnlocked` |
+| `POST /dashboard/messages/:id` | — | Send a chat message; up to 10 attachments and/or tagged existing project files per message; broadcasts `new-message` to the booking's socket room; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /dashboard/messages/attachments/:filename` | — | Owning-client-only chat attachment download/view |
 | `POST /dashboard/messages/:id/:messageId/delete` | — | Soft-delete a message the client sent (clears body/attachments, tombstones the row); tagged project-file references are left untouched on disk |
 
@@ -64,8 +64,8 @@
 | `GET /admin/uploads/:filename` | — | Protected file serving (checks active and `_archive` paths, and both `uploadedFiles`/`deliverableFiles`); images inline, video/audio in-browser, download for all |
 | `/admin/coupons` | Coupon Manager | List/create/toggle-active/delete coupon codes (percent or fixed discount, optional expiry) |
 | `/admin/messages` | Messages Inbox | List of every project thread (one row per booking with a linked client) with unread indicators |
-| `/admin/messages/:id` | Project Thread | Real-time chat (Socket.IO) with the client on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest` |
-| `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message |
+| `/admin/messages/:id` | Project Thread | Real-time chat (Socket.IO) with the client on one booking; full page normally, thread-panel partial only on `X-Requested-With: XMLHttpRequest`; composer disabled until `chatUnlocked` |
+| `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /admin/messages/attachments/:filename` | — | Admin-only chat attachment download/view |
 | `POST /admin/booking/:id/messages/:messageId/delete` | — | Soft-delete a message admin sent |
 | `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus` on `invoice.payment_succeeded`; deposit payment no longer auto-flips `status` (admin confirms manually, prompted by a `payment` `AdminNotification`); final payment still flips `status` to `completed`; notifies client + admin |
@@ -73,6 +73,8 @@
 ## Real-Time Messaging (Socket.IO)
 
 Chat is a separate system from the `/dashboard`/`/admin` in-app `Notification`/`AdminNotification` alert feeds — it lives entirely under its own `/messages` inbox pages (not embedded on `dashboard-booking.ejs`/`admin/booking.ejs`), backed by a `Message` model (one document per chat message). Socket.IO rooms are scoped per booking (`project:<bookingId>`), authorized once at connect (admin: booking exists; client: owns booking); sending itself still goes through a normal session-checked HTTP POST (multer needs a real request to parse attachments) — the socket only broadcasts the saved message (`new-message` event) to whoever has that thread open. Unread-message badges are piggybacked onto the existing 15s notification-poll endpoints (`/api/notifications/poll`, `/api/admin/notifications/poll`) via a `messageItems` array, rather than a separate polling channel or persisted `Notification` documents.
+
+Chat is gated behind the `chatUnlocked` virtual on `BookingRequest` (`accepted`/`in-progress`/`completed`/`paused` — not `pending`/`in-review`/`declined`), enforced on both send routes (403 if locked) and reflected in both thread panels (disabled composer, explanatory placeholder) and both list views (locked-state row copy instead of "No messages yet.").
 
 ## User Flow
 

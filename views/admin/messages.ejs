@@ -243,7 +243,7 @@
             %>
               <%= t.lastMessage.senderRole === 'admin' ? 'You: ' : '' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
             <% } else { %>
-              <span class="text-gray-700">No messages yet.</span>
+              <span class="<%= t.booking.chatUnlocked ? 'text-gray-700' : 'text-gray-500' %>"><%= t.booking.chatUnlocked ? 'No messages yet.' : 'Not accepted yet.' %></span>
             <% } %>
           </p>
         </div>

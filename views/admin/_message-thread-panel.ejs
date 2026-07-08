@@ -130,7 +130,7 @@
   </div>
   <% }) %>
   <% if (!messages.length) { %>
-  <p class="text-xs text-gray-600">No messages yet.</p>
+  <p class="text-xs <%= booking.chatUnlocked ? 'text-gray-600' : 'text-gray-400' %>"><%= booking.chatUnlocked ? 'No messages yet.' : 'Chat opens once this project is accepted.' %></p>
   <% } %>
 </div>
 
@@ -236,17 +236,20 @@
 </div>
 
 <!-- Composer -->
+<% const composerLocked = !booking.chatUnlocked; %>
 <form id="composer" class="flex flex-col gap-2 px-5 py-4 border-t border-white/5 shrink-0" enctype="multipart/form-data" data-post-path="<%= postPath %>" data-attachment-base="<%= attachmentBasePath %>" data-my-role="<%= myRole %>">
   <div id="attachment-preview-list" class="hidden flex-wrap gap-2"></div>
   <div class="flex items-end gap-2">
-    <button type="button" id="attach-btn" class="h-12 w-12 flex items-center justify-center text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors shrink-0">
+    <button type="button" id="attach-btn" <%= composerLocked ? 'disabled' : '' %>
+      class="h-12 w-12 flex items-center justify-center text-gray-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-md transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white/5 disabled:hover:text-gray-300">
       <iconify-icon icon="material-symbols-light:attach-file" width="20" height="20"></iconify-icon>
     </button>
-    <input type="file" id="attachment-input" name="attachments" multiple class="hidden" />
-    <textarea id="body-input" rows="1" placeholder="Reply to client..."
-      class="flex-1 h-12 bg-white/5 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none"
+    <input type="file" id="attachment-input" name="attachments" multiple class="hidden" <%= composerLocked ? 'disabled' : '' %> />
+    <textarea id="body-input" rows="1" placeholder="<%= composerLocked ? "This project hasn't been accepted yet." : 'Reply to client...' %>" <%= composerLocked ? 'disabled' : '' %>
+      class="flex-1 h-12 bg-white/5 border border-white/10 rounded-md px-4 py-2.5 text-sm text-white outline-none resize-none disabled:opacity-40 disabled:cursor-not-allowed"
       style="max-height:120px;"></textarea>
-    <button type="submit" class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors">
+    <button type="submit" <%= composerLocked ? 'disabled' : '' %>
+      class="h-12 bg-amber-400 text-black text-sm font-bold px-4 py-2.5 rounded-md hover:bg-amber-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-400">
       Send
     </button>
   </div>

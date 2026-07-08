@@ -373,6 +373,7 @@ async function preCrCode(req, res, next) {
 const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
 const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, "Censored preview": 45, "Intro/outro bumper": 75, "Extra revision": 30 };
 const MAX_COUPONS_PER_BOOKING = 3;
+const MAX_PLATFORM_LINKS = 3;
 const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
 const SERVICE_TYPES = ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"];
 const PIPELINE_STATUS_ORDER = ["pending", "in-review", "accepted", "in-progress", "completed", "paused", "declined"];
@@ -389,6 +390,7 @@ function writeBookingTxt(booking) {
     `  Name:     ${booking.name}`,
     `  Email:    ${booking.email}`,
     `  Location: ${booking.location}`,
+    `  Type:     ${booking.clientType}`,
   ];
   lines.push(
     "",
@@ -403,6 +405,11 @@ function writeBookingTxt(booking) {
   if (booking.mediaLinks && booking.mediaLinks.length > 0) {
     lines.push("", "MEDIA LINKS");
     booking.mediaLinks.forEach(l => lines.push(`  - ${l}`));
+  }
+
+  if (booking.platforms && booking.platforms.length > 0) {
+    lines.push("", "EXTERNAL LINKS");
+    booking.platforms.forEach(p => lines.push(`  - ${p.platform}: ${p.handle}`));
   }
 
   if (booking.uploadedFiles && booking.uploadedFiles.length > 0) {
@@ -676,6 +683,7 @@ async function attachCrCodeForClient(req, res, next) {
   const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("crCode archived clientId name uploadedFiles deliverableFiles status");
   if (!booking) return res.sendStatus(403);
   if (booking.archived) return res.sendStatus(403);
+  if (!booking.chatUnlocked) return res.status(403).json({ error: "Chat opens once this project is accepted." });
   req.crCode = booking.crCode;
   req.booking = booking;
   next();
@@ -709,7 +717,7 @@ app.get("/hire", async (req, res) => {
   const user = await User.findById(req.session.userId);
   const [lastBooking, canUploadNow] = await Promise.all([
     user?.bookings?.length
-      ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
+      ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location clientType platforms")
       : null,
     hasTrustedDepositHistory(req.session.userId),
   ]);
@@ -769,20 +777,26 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       : err.code === "LIMIT_UNEXPECTED_FILE"
       ? canUploadNow
         ? "You can upload up to 20 files at a time."
-        : "File uploads aren't available yet for new clients — add reference links below instead. We'll open uploads for this project once it moves to review."
+        : "File uploads open for first-time clients once their request has been approved."
       : err.message || "Upload failed.";
     return res.render("hire", { error: message, formData: req.body, loggedInUser: null, lastBooking: null, canUploadNow });
   });
 }, async (req, res) => {
-  const { name, email, location, pricingTier, budget, projectBrief } = req.body;
+  const { name, email, location, clientType, pricingTier, budget, projectBrief } = req.body;
   const serviceType = [].concat(req.body.serviceType || []).filter(Boolean);
   const mediaLinks  = [].concat(req.body.mediaLinks  || []).filter(Boolean);
   const addOns      = [].concat(req.body.addOns      || []).filter(Boolean);
+  const platformNames   = [].concat(req.body.platformNames   || []);
+  const platformHandles = [].concat(req.body.platformHandles || []);
+  const platforms = platformNames
+    .map((platform, i) => ({ platform, handle: (platformHandles[i] || "").trim() }))
+    .filter((p) => p.platform && p.handle)
+    .slice(0, MAX_PLATFORM_LINKS);
   const canUploadNow = req.canUploadNow;
 
   // Server-side validation
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!name || !email || !emailRe.test(email) || !location || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000) {
+  if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || !platforms.length) {
     let loggedInUser = null;
     let lastBooking = null;
     if (req.session.userId) {
@@ -840,12 +854,14 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       name,
       email,
       location,
+      clientType,
       serviceType,
       pricingTier,
       addOns,
       budget: pricingTier === "Custom" ? budget : undefined,
       projectBrief,
       mediaLinks,
+      platforms,
       uploadedFiles,
       couponCodes,
       discountAmount,
@@ -1078,8 +1094,13 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
     return;
   }
   const profileComplete = !!(user.name?.trim() && user.location?.trim());
-  const canUploadNow = await hasTrustedDepositHistory(req.session.userId);
-  res.render("dashboard-new", { user, profileComplete, canUploadNow });
+  const [canUploadNow, lastBooking] = await Promise.all([
+    hasTrustedDepositHistory(req.session.userId),
+    user.bookings?.length
+      ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("clientType platforms")
+      : null,
+  ]);
+  res.render("dashboard-new", { user, profileComplete, canUploadNow, lastBooking });
 });
 
 app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
@@ -1515,6 +1536,7 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
   if (!booking) return res.status(404).json({ error: "Project not found." });
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
   if (!booking.clientId) return res.status(400).json({ error: "This project has no linked client account." });
+  if (!booking.chatUnlocked) return res.status(403).json({ error: "This project hasn't been accepted yet." });
   req.crCode = booking.crCode;
   req.booking = booking;
   next();

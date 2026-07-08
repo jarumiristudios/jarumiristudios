@@ -50,7 +50,7 @@
       width: 100%;
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
+      border-radius: 6px;
       padding: 14px 16px;
       color: #fff;
       font-size: 14px;
@@ -73,7 +73,7 @@
     /* Drop zone */
     .drop-zone {
       border: 2px dashed rgba(255,255,255,0.1);
-      border-radius: 16px;
+      border-radius: 6px;
       padding: 40px 24px;
       text-align: center;
       cursor: pointer;
@@ -92,7 +92,7 @@
       row-gap: 8px;
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px;
+      border-radius: 6px;
       padding: 12px 14px;
       font-size: 13px;
     }
@@ -100,7 +100,7 @@
     .remove-file-btn {
       display: flex; align-items: center; justify-content: center;
       width: 28px; height: 28px;
-      border-radius: 8px;
+      border-radius: 6px;
       font-size: 18px; line-height: 1;
       flex-shrink: 0;
     }
@@ -127,7 +127,7 @@
       width: 100%;
       background: rgba(255,255,255,0.04);
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
+      border-radius: 6px;
       padding: 14px 16px;
       color: #9ca3af;
       font-size: 14px;
@@ -158,7 +158,7 @@
       top: calc(100% + 6px); left: 0; right: 0;
       background: #111;
       border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px;
+      border-radius: 6px;
       overflow: hidden;
       z-index: 100;
       box-shadow: 0 20px 40px rgba(0,0,0,0.6);
@@ -210,6 +210,7 @@
   <main class="pt-28 pb-20 px-6">
     <div class="max-w-2xl mx-auto">
 
+      <% var hasReusableProfile = !!(locals.loggedInUser && locals.lastBooking && locals.lastBooking.clientType && locals.lastBooking.platforms && locals.lastBooking.platforms.length > 0); %>
       <% if (locals.success) { %>
       <!-- ══════════ SUCCESS STATE ══════════ -->
       <div class="text-center py-16">
@@ -334,7 +335,7 @@
       <% } %>
 
       <!-- Step indicator -->
-      <% if (locals.loggedInUser && locals.lastBooking) { %>
+      <% if (hasReusableProfile) { %>
       <div class="flex items-start gap-2 mb-10">
         <div class="flex flex-col items-center gap-1.5">
           <div class="step-dot active" id="dot-1">1</div>
@@ -367,19 +368,24 @@
 
       <!-- FORM (multipart for file uploads) -->
       <form id="booking-form" action="/hire" method="POST" enctype="multipart/form-data" novalidate>
-        <% if (locals.loggedInUser && locals.lastBooking) { %>
+        <% if (hasReusableProfile) { %>
         <input type="hidden" name="name"           value="<%= locals.lastBooking.name %>" />
         <input type="hidden" name="email"          value="<%= locals.loggedInUser.email %>" />
         <input type="hidden" name="location"       value="<%= locals.lastBooking.location %>" />
+        <input type="hidden" name="clientType"     value="<%= locals.lastBooking.clientType %>" />
+        <% locals.lastBooking.platforms.forEach(p => { %>
+        <input type="hidden" name="platformNames"   value="<%= p.platform %>" />
+        <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
+        <% }) %>
         <% } %>
 
         <!-- ── Step 1: Contact ── -->
-        <% if (!locals.loggedInUser || !locals.lastBooking) { %>
+        <% if (!hasReusableProfile) { %>
         <div class="step-panel active" id="step-1">
           <div class="space-y-5">
             <div>
               <label class="form-label" for="name">Full name <span class="text-amber-400">*</span></label>
-              <input class="form-input" type="text" id="name" name="name" placeholder="Your name" autocomplete="name" value="<%= locals.formData ? formData.name : '' %>" />
+              <input class="form-input" type="text" id="name" name="name" placeholder="Your name" autocomplete="name" value="<%= locals.formData ? formData.name : (locals.lastBooking ? lastBooking.name : '') %>" />
               <p class="field-error hidden" id="err-name">Please enter your name.</p>
             </div>
             <div>
@@ -389,8 +395,93 @@
             </div>
             <div>
               <label class="form-label" for="location">Location <span class="text-amber-400">*</span></label>
-              <input class="form-input" type="text" id="location" name="location" placeholder="City, Country" autocomplete="country-name" value="<%= locals.formData ? formData.location : '' %>" />
+              <input class="form-input" type="text" id="location" name="location" placeholder="City, Country" autocomplete="country-name" value="<%= locals.formData ? formData.location : (locals.lastBooking ? lastBooking.location : '') %>" />
               <p class="field-error hidden" id="err-location">Please enter your location.</p>
+            </div>
+
+            <!-- Client type custom dropdown -->
+            <div>
+              <label class="form-label">You are a(n) <span class="text-amber-400">*</span></label>
+              <input type="hidden" id="clientType" name="clientType" value="<%= locals.formData ? formData.clientType : '' %>" />
+              <div class="custom-select" id="cs-clientType">
+                <button type="button" class="custom-select-trigger <%= locals.formData && formData.clientType ? 'selected' : '' %>" id="cs-clientType-trigger" onclick="toggleDropdown('cs-clientType')" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="cs-clientType-label"><%= locals.formData && formData.clientType ? formData.clientType : 'Select an option' %></span>
+                  <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+                </button>
+                <div class="custom-select-menu" id="cs-clientType-menu" role="listbox">
+                  <div class="custom-select-option <%= locals.formData && formData.clientType === 'Independent Creator' ? 'active' : '' %>" onclick="selectClientType('Independent Creator')" role="option" data-value="Independent Creator">
+                    <p class="opt-label">Independent Creator</p>
+                    <p class="opt-desc">Solo creator or freelancer making your own content</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.clientType === 'Agency' ? 'active' : '' %>" onclick="selectClientType('Agency')" role="option" data-value="Agency">
+                    <p class="opt-label">Agency</p>
+                    <p class="opt-desc">Managing this project on behalf of a client</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.clientType === 'Studio' ? 'active' : '' %>" onclick="selectClientType('Studio')" role="option" data-value="Studio">
+                    <p class="opt-label">Studio</p>
+                    <p class="opt-desc">In-house production team or post-production house</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.clientType === 'Brand / Business' ? 'active' : '' %>" onclick="selectClientType('Brand / Business')" role="option" data-value="Brand / Business">
+                    <p class="opt-label">Brand / Business</p>
+                    <p class="opt-desc">Company producing content for your own brand</p>
+                  </div>
+                  <div class="custom-select-option <%= locals.formData && formData.clientType === 'Other' ? 'active' : '' %>" onclick="selectClientType('Other')" role="option" data-value="Other">
+                    <p class="opt-label">Other</p>
+                    <p class="opt-desc">Something else — tell us in your project brief</p>
+                  </div>
+                </div>
+              </div>
+              <p class="field-error hidden" id="err-clientType">Please select an option.</p>
+            </div>
+
+            <!-- External links (platform + handle) -->
+            <div>
+              <label class="form-label">External links <span class="text-amber-400">*</span> <span class="text-gray-400 font-normal">(1–3 links)</span></label>
+              <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
+              <div id="platform-hidden-inputs"></div>
+              <div class="flex gap-2">
+                <input type="hidden" id="platform-select" value="Instagram" />
+                <div class="custom-select w-36 shrink-0" id="cs-platform">
+                  <button type="button" class="custom-select-trigger" id="cs-platform-trigger" onclick="toggleDropdown('cs-platform')" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="cs-platform-label">Instagram</span>
+                    <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
+                  </button>
+                  <div class="custom-select-menu" id="cs-platform-menu" role="listbox">
+                    <div class="custom-select-option active" onclick="selectPlatformOption('Instagram')" role="option" data-value="Instagram">
+                      <p class="opt-label">Instagram</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Twitter')" role="option" data-value="Twitter">
+                      <p class="opt-label">Twitter</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('TikTok')" role="option" data-value="TikTok">
+                      <p class="opt-label">TikTok</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('OnlyFans')" role="option" data-value="OnlyFans">
+                      <p class="opt-label">OnlyFans</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Fansly')" role="option" data-value="Fansly">
+                      <p class="opt-label">Fansly</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Fanview')" role="option" data-value="Fanview">
+                      <p class="opt-label">Fanview</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('MannyVids')" role="option" data-value="MannyVids">
+                      <p class="opt-label">MannyVids</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Pornhub')" role="option" data-value="Pornhub">
+                      <p class="opt-label">Pornhub</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Other')" role="option" data-value="Other">
+                      <p class="opt-label">Other</p>
+                    </div>
+                  </div>
+                </div>
+                <input class="form-input" type="text" id="platform-handle-input" placeholder="@handle or profile URL" />
+                <button type="button" id="platform-add-btn" onclick="addPlatformEntry()" aria-label="Add link" class="shrink-0 w-11 rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center">
+                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                </button>
+              </div>
+              <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
             </div>
           </div>
 
@@ -404,7 +495,7 @@
         <% } %>
 
         <!-- ── Step 2: Project Details ── -->
-        <div class="step-panel <%= (locals.loggedInUser && locals.lastBooking) ? 'active' : '' %>" id="step-2">
+        <div class="step-panel <%= hasReusableProfile ? 'active' : '' %>" id="step-2">
           <div class="space-y-5">
             <!-- Pricing tier custom dropdown -->
             <div>
@@ -436,7 +527,7 @@
                     <p style="font-size:11px;color:#6b7280;line-height:1.5;">* Prices are subject to modification based on requested services, project complexity, and queue availability.</p>
                   </div>
                   <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
-                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
                   </div>
                 </div>
               </div>
@@ -493,7 +584,7 @@
                     </div>
                   </div>
                   <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
-                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
                   </div>
                 </div>
               </div>
@@ -559,7 +650,7 @@
                     </div>
                   </div>
                   <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
-                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:8px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
+                    <button type="button" onclick="closeAllDropdowns()" style="width:100%;padding:8px;border-radius:6px;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.25);color:#f59e0b;font-size:12px;font-weight:600;cursor:pointer;">Done</button>
                   </div>
                 </div>
               </div>
@@ -573,7 +664,7 @@
               <div class="flex gap-2">
                 <input class="form-input" type="text" id="coupon-input" placeholder="e.g. LAUNCH20" autocomplete="off" style="text-transform:uppercase;" />
                 <button type="button" id="coupon-apply-btn" onclick="applyCoupon()"
-                  class="shrink-0 px-5 py-3 rounded-xl bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:text-white hover:border-white/25 transition-colors">
+                  class="shrink-0 px-5 py-3 rounded-md bg-white/5 border border-white/10 text-sm font-semibold text-gray-300 hover:text-white hover:border-white/25 transition-colors">
                   Apply
                 </button>
               </div>
@@ -592,7 +683,7 @@
           </div>
 
           <div class="mt-8 flex justify-between">
-            <% if (!locals.loggedInUser || !locals.lastBooking) { %>
+            <% if (!hasReusableProfile) { %>
             <button type="button" onclick="goToStep(1)"
               class="px-7 py-3.5 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 transition-colors">
               ← Back
@@ -632,23 +723,25 @@
                 <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 9h10.5a2.25 2.25 0 002.25-2.25v-6a2.25 2.25 0 00-2.25-2.25H6.75A2.25 2.25 0 004.5 12v6a2.25 2.25 0 002.25 2.25z" />
               </svg>
               <div>
-                <p class="text-sm text-white font-medium mb-1">File uploads open once we start reviewing</p>
-                <p class="text-xs text-gray-400">To keep storage available for real projects, raw file uploads aren't accepted at submission for new clients. Add reference links below — we'll open uploads for this project once it moves to review.</p>
+                <p class="text-sm text-white font-medium mb-1">Uploads open after approval</p>
+                <p class="text-xs text-gray-400">By our policy, first-time clients can upload files once their request has been approved. We'll notify you once uploads are open for this project.</p>
               </div>
             </div>
             <% } %>
 
             <!-- Media links -->
+            <% if (locals.canUploadNow) { %>
             <div>
               <label class="form-label">Media links <span class="text-gray-400 font-normal">(YouTube, Google Drive, Dropbox — optional)</span></label>
               <div class="flex gap-2">
                 <input class="form-input" type="url" id="link-input" placeholder="https://drive.google.com/…" />
-                <button type="button" onclick="addLink()" class="shrink-0 w-11 h-11 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center text-lg font-light" style="margin-top:1px;">+</button>
+                <button type="button" onclick="addLink()" class="shrink-0 w-11 h-11 rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center text-lg font-light" style="margin-top:1px;">+</button>
               </div>
               <p class="field-error hidden mt-1" id="err-link">Please enter a valid URL.</p>
               <div id="link-tags" class="mt-3 flex flex-wrap gap-2"></div>
               <div id="link-hidden-inputs"></div>
             </div>
+            <% } %>
 
           </div>
 
@@ -692,7 +785,7 @@
     // can't desync from what's actually shown on screen.
     document.getElementById('booking-form')?.reset();
 
-    const isLoggedIn  = <%= (locals.loggedInUser && locals.lastBooking) ? 'true' : 'false' %>;
+    const isLoggedIn  = <%= hasReusableProfile ? 'true' : 'false' %>;
     // When logged in, step 2 is visual step 1 and step 3 is visual step 2
     const VISUAL_STEP = isLoggedIn ? (s) => s - 1 : (s) => s;
     const TOTAL_DOTS  = isLoggedIn ? 2 : 3;
@@ -730,16 +823,31 @@
       let ok = true;
 
       if (step === 1) {
-        const name     = document.getElementById('name');
-        const email    = document.getElementById('email');
-        const location = document.getElementById('location');
-        const emailRe  = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const name       = document.getElementById('name');
+        const email      = document.getElementById('email');
+        const location   = document.getElementById('location');
+        const clientType = document.getElementById('clientType');
+        const emailRe    = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
         setFieldError('name',     !name.value.trim(),           'err-name');
         setFieldError('email',    !emailRe.test(email.value),   'err-email');
         setFieldError('location', !location.value.trim(),       'err-location');
 
-        if (!name.value.trim() || !emailRe.test(email.value) || !location.value.trim()) ok = false;
+        const clientTypeTrigger = document.getElementById('cs-clientType-trigger');
+        const clientTypeErr     = document.getElementById('err-clientType');
+        if (!clientType.value) { clientTypeTrigger.classList.add('error');    clientTypeErr.classList.remove('hidden'); }
+        else                   { clientTypeTrigger.classList.remove('error'); clientTypeErr.classList.add('hidden'); }
+
+        const platformErr = document.getElementById('err-platform');
+        if (!platformEntries.length) {
+          platformErr.textContent = 'Please add at least one external link.';
+          platformErr.classList.remove('hidden');
+          ok = false;
+        } else if (platformErr.textContent === 'Please add at least one external link.') {
+          platformErr.classList.add('hidden');
+        }
+
+        if (!name.value.trim() || !emailRe.test(email.value) || !location.value.trim() || !clientType.value || !platformEntries.length) ok = false;
       }
 
       if (step === 2) {
@@ -1019,6 +1127,160 @@
       updateEstimate();
     }
 
+    // External links: platform dropdown + handle input side by side. Enter or
+    // the + button commits the pair as a badge above the field.
+    let platformEntries = []; // [{ platform, handle }]
+    const MAX_PLATFORM_LINKS = 3;
+
+    function selectPlatformOption(value) {
+      document.getElementById('platform-select').value = value;
+      document.getElementById('cs-platform-label').textContent = value;
+      document.querySelectorAll('#cs-platform-menu .custom-select-option').forEach(o => {
+        o.classList.toggle('active', o.dataset.value === value);
+      });
+      const trigger = document.getElementById('cs-platform-trigger');
+      document.getElementById('cs-platform-menu').classList.remove('open');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+      const handleInput = document.getElementById('platform-handle-input');
+      handleInput.placeholder = value === 'Other' ? 'Paste your link (https://…)' : '@handle or profile URL';
+      handleInput.focus();
+    }
+
+    function addPlatformEntry() {
+      const platform = document.getElementById('platform-select').value;
+      const input    = document.getElementById('platform-handle-input');
+      const handle   = input.value.trim();
+      const err      = document.getElementById('err-platform');
+
+      if (platformEntries.length >= MAX_PLATFORM_LINKS) return;
+
+      if (!handle) {
+        input.classList.add('error');
+        err.textContent = 'Please enter a handle or profile URL.';
+        err.classList.remove('hidden');
+        return;
+      }
+      input.classList.remove('error');
+      err.classList.add('hidden');
+
+      platformEntries.push({ platform, handle });
+      input.value = '';
+      renderPlatformBadges();
+      input.focus();
+    }
+
+    function removePlatformEntry(i) {
+      platformEntries.splice(i, 1);
+      renderPlatformBadges();
+    }
+
+    // Known real domains only — never fabricate a TLD for a platform we don't
+    // actually know the domain of, and never touch a URL the user already typed.
+    const PLATFORM_DOMAINS = {
+      Instagram: 'instagram.com',
+      Twitter:   'x.com',
+      TikTok:    'tiktok.com',
+      OnlyFans:  'onlyfans.com',
+      Fansly:    'fansly.com',
+      Pornhub:   'pornhub.com',
+      MannyVids: 'manyvids.com',
+    };
+
+    // TikTok profile URLs require the @ in the path (tiktok.com/@user); every
+    // other platform here uses a bare username, so strip a leading @ instead.
+    function handlePath(platform, value) {
+      const bare = value.replace(/^@/, '');
+      return platform === 'TikTok' ? `@${bare}` : bare;
+    }
+
+    function linkPreview(platform, value) {
+      const v = value.trim();
+      let text;
+      if (/^https?:\/\//i.test(v)) {
+        text = v.replace(/^https?:\/\//i, '');
+      } else {
+        const domain = PLATFORM_DOMAINS[platform];
+        text = domain ? `${domain}/${handlePath(platform, v)}` : v;
+      }
+      return text.length > 32 ? `${text.slice(0, 32)}…` : text;
+    }
+
+    // Real, absolute URL to open — null when we don't know the platform's domain
+    // and the user didn't paste a full URL, rather than guessing one.
+    function linkHref(platform, value) {
+      const v = value.trim();
+      if (/^https?:\/\//i.test(v)) return v;
+      const domain = PLATFORM_DOMAINS[platform];
+      return domain ? `https://${domain}/${handlePath(platform, v)}` : null;
+    }
+
+    function renderPlatformBadges() {
+      const badges    = document.getElementById('platform-badges');
+      const container = document.getElementById('platform-hidden-inputs');
+      badges.innerHTML = '';
+      container.innerHTML = '';
+
+      platformEntries.forEach((entry, i) => {
+        const badge = document.createElement('span');
+        badge.className = 'inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-xs font-semibold text-amber-400';
+
+        const href = linkHref(entry.platform, entry.handle);
+        const text = document.createElement(href ? 'a' : 'span');
+        if (href) {
+          text.href = href;
+          text.target = '_blank';
+          text.rel = 'noopener';
+          text.className = 'no-underline';
+        }
+        text.textContent = `${entry.platform} | ${linkPreview(entry.platform, entry.handle)}`;
+        badge.appendChild(text);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.setAttribute('aria-label', `Remove ${entry.platform} link`);
+        removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => removePlatformEntry(i);
+        badge.appendChild(removeBtn);
+
+        badges.appendChild(badge);
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'hidden'; nameInput.name = 'platformNames'; nameInput.value = entry.platform;
+        container.appendChild(nameInput);
+
+        const handleInput = document.createElement('input');
+        handleInput.type = 'hidden'; handleInput.name = 'platformHandles'; handleInput.value = entry.handle;
+        container.appendChild(handleInput);
+      });
+
+      badges.classList.toggle('hidden', platformEntries.length === 0);
+
+      const atMax  = platformEntries.length >= MAX_PLATFORM_LINKS;
+      const input  = document.getElementById('platform-handle-input');
+      const addBtn = document.getElementById('platform-add-btn');
+      input.disabled  = atMax;
+      addBtn.disabled = atMax;
+      addBtn.classList.toggle('opacity-40', atMax);
+      input.placeholder = atMax ? 'Maximum 3 links added' : '@handle or profile URL';
+    }
+
+    document.getElementById('platform-handle-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addPlatformEntry(); }
+    });
+
+    // aspect-ratio doesn't reliably resolve against a flex-stretched cross size
+    // in a row, so force the add-link button square against its actual (stretched) height
+    (function () {
+      const btn = document.getElementById('platform-add-btn');
+      if (!btn) return;
+      const sync = () => { btn.style.width = btn.getBoundingClientRect().height + 'px'; };
+      sync();
+      if (window.ResizeObserver) new ResizeObserver(sync).observe(btn);
+      else window.addEventListener('resize', sync);
+    })();
+
     // ── Price estimate ──
     const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
     const ADDON_PRICES = {
@@ -1212,6 +1474,24 @@
       else                    budgetField.classList.add('hidden');
 
       updateEstimate();
+    }
+
+    // Single-select: client type
+    function selectClientType(value) {
+      document.getElementById('clientType').value = value;
+      document.getElementById('cs-clientType-label').textContent = value;
+
+      const trigger = document.getElementById('cs-clientType-trigger');
+      trigger.classList.add('selected');
+      trigger.classList.remove('error');
+      document.getElementById('err-clientType').classList.add('hidden');
+
+      document.querySelectorAll('#cs-clientType-menu .custom-select-option').forEach(o => o.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      document.getElementById('cs-clientType-menu').classList.remove('open');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
     }
 
     // Close dropdowns on outside click
