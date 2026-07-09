@@ -1869,6 +1869,15 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking || booking.depositStatus !== "none") return res.redirect(`/admin/booking/${req.params.id}`);
 
+  // Sending the deposit invoice also flips status to "accepted", which is the same
+  // moment the client's dashboard would show the pay link. Require the booking to have
+  // already passed through "in-review" so the client had a window to upload files via
+  // their dashboard before ever seeing a payment ask — otherwise accept+invoice could
+  // fire straight from "pending" with nothing uploaded yet.
+  if (!["in-review", "accepted", "in-progress"].includes(booking.status)) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Move status to In Review first so the client can upload files before the deposit invoice goes out.")}`);
+  }
+
   const agreedPrice = parseFloat(req.body.agreedPrice);
   if (!agreedPrice || agreedPrice <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
 

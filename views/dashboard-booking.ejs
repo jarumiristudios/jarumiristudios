@@ -267,9 +267,12 @@
           <% (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
           <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
           <% } }) %>
+          <% (booking.couponCodes || []).forEach(c => { %>
+          <div class="flex justify-between text-sm"><span class="text-green-400">Coupon (<%= c.code %>)</span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
+          <% }) %>
           <div class="flex justify-between text-sm pt-2 border-t border-white/5">
             <span class="text-gray-400 font-medium">Total</span>
-            <span class="text-white font-semibold">$<%= tierBase + addonSum %></span>
+            <span class="text-white font-semibold">$<%= (tierBase + addonSum - (booking.discountAmount || 0)).toFixed(2) %></span>
           </div>
         </div>
         <p class="text-xs text-gray-500 mt-2">Final price may vary based on project scope and complexity.</p>
@@ -422,6 +425,11 @@
           Upload
         </button>
       </div>
+    </div>
+    <% } else if (!booking.archived && booking.status === 'pending') { %>
+    <div class="section-card">
+      <h2 class="text-sm font-semibold text-white mb-1">Add files</h2>
+      <p class="text-xs text-gray-500">We're reviewing your brief — once that's done, you'll be able to upload raw footage or reference files here, before any payment is due.</p>
     </div>
     <% } %>
 
