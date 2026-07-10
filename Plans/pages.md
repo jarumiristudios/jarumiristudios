@@ -25,7 +25,7 @@
 | `POST /dashboard/booking/:id/revision` | — | Client submits a revision request message on their booking |
 | `POST /dashboard/booking/:id/pause` | — | Client pauses their project (`status: "paused"`); emails admin via `sendAdminPauseAlert`; blocked once already declined/completed/paused/archived |
 | `POST /dashboard/booking/:id/nudge` | — | Client asks for an update; creates an `AdminNotification` (`type: "nudge"`) instead of emailing; rate-limited to 3 per booking per rolling hour (`429` JSON error past that) |
-| `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's `files/` folder via `hardDeleteBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true` and `archived: true` (also moves the now-empty booking folder into `uploads/_archive/`); DB row and `booking.txt` are kept |
+| `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's raw uploads and chat attachments via `hardDeleteBookingFiles()`/`archiveAndWipeBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true` and `archived: true` (also moves the booking folder into `uploads/_archive/`); DB row, `booking.txt`, and any delivered **`deliverableFiles`** are kept — only client-submitted content is wiped |
 | `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects, sortable newest/oldest |
 | `GET /dashboard/uploads/:filename` | — | Protected file serving for the owning client only |
 | `GET /dashboard/deliverables/:filename` | — | Final deliverable download for the owning client only, gated on `status === "completed"` |
@@ -49,7 +49,7 @@
 | `GET /api/admin/notifications/poll` | — | Polling endpoint for live unread badge + new items since a timestamp (`?since=<ms>`) |
 | `POST /api/admin/notifications/mark-read` | — | Marks all admin notifications read (JSON response) |
 | `/admin` | Admin Dashboard | Active/Archived tab (`?view=archived`) bookings, server-side paginated (30/page) with debounced search (`q`/`field` query params) and status filter pills, total/pending counts |
-| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes, payment card (deposit due date, delivery date once paid), media links, revision list (mark reviewed) |
+| `/admin/booking/:id` | Booking Detail | Full booking info, status picker, admin notes (disabled while archived), payment card (deposit due date, delivery date once paid), revision invoices card, media links, revision request list (mark reviewed) |
 | `POST /admin/booking/:id/status` | — | Update booking status + create client notification (special-cased message for `declined`); server-enforced status gate (`isStatusChangeAllowed`) — `completed`/`declined` are terminal, forward moves capped at one step, backward moves and `declined` always allowed, `paused` only from `in-progress` |
 | `POST /admin/booking/:id/notes` | — | Append an admin note (`adminNotes` array, admin-only, not client-visible) |
 | `POST /admin/booking/:id/notes/:noteId/edit` | — | Edit the text of an existing admin note |
@@ -58,6 +58,7 @@
 | `POST /admin/booking/:id/deposit-due-date` | — | Update (or clear) the deposit due date while `depositStatus === "pending"` |
 | `POST /admin/booking/:id/delivery-date` | — | Set/clear the estimated delivery date, only allowed once `depositStatus === "paid"` |
 | `POST /admin/booking/:id/send-final` | — | Send 70% final invoice once deposit is paid |
+| `POST /admin/booking/:id/send-revision-invoice` | — | Send an ad-hoc Stripe invoice for extra revision work, admin-set amount (defaults to the `"Extra revision"` add-on price, $30) and due date; unlike deposit/final there's no cap — appends to `revisionInvoices[]` rather than overwriting a single field; requires `stripeCustomerId` (a deposit invoice must have gone out at least once) |
 | `POST /admin/booking/:id/archive` / `POST /admin/bookings/bulk-archive` | — | Archive: sets `archived: true`, moves the booking's upload folder to `uploads/_archive/`, notifies client |
 | `POST /admin/booking/:id/restore` | — | Un-archives a booking and moves its folder back out of `uploads/_archive/` |
 | `POST /admin/booking/:id/revision/:revId/reviewed` | — | Marks a single client revision request as reviewed |
@@ -70,13 +71,18 @@
 | `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /admin/messages/attachments/:filename` | — | Admin-only chat attachment download/view |
 | `POST /admin/booking/:id/messages/:messageId/delete` | — | Soft-delete a message admin sent |
-| `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus` on `invoice.payment_succeeded`; deposit payment no longer auto-flips `status` (admin confirms manually, prompted by a `payment` `AdminNotification`); final payment still flips `status` to `completed`; notifies client + admin |
+| `POST /admin/booking/:id/chat-block` / `POST /admin/booking/:id/chat-unblock` | — | Mutes/unmutes the client on this project's chat (`chatBlocked`) — client keeps read access but can't send; independent of `chatUnlocked`; JSON response, triggered via `fetch()` from inside the chat panel |
+| `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus`/matching `revisionInvoices[].status` on `invoice.payment_succeeded`; deposit payment no longer auto-flips `status` (admin confirms manually, prompted by a `payment` `AdminNotification`); final payment still flips `status` to `completed`; notifies client + admin |
 
 ## Real-Time Messaging (Socket.IO)
 
 Chat is a separate system from the `/dashboard`/`/admin` in-app `Notification`/`AdminNotification` alert feeds — it lives entirely under its own `/messages` inbox pages (not embedded on `dashboard-booking.ejs`/`admin/booking.ejs`), backed by a `Message` model (one document per chat message). Socket.IO rooms are scoped per booking (`project:<bookingId>`), authorized once at connect (admin: booking exists; client: owns booking); sending itself still goes through a normal session-checked HTTP POST (multer needs a real request to parse attachments) — the socket only broadcasts the saved message (`new-message` event) to whoever has that thread open. Unread-message badges are piggybacked onto the existing 15s notification-poll endpoints (`/api/notifications/poll`, `/api/admin/notifications/poll`) via a `messageItems` array, rather than a separate polling channel or persisted `Notification` documents.
 
 Chat is gated behind the `chatUnlocked` virtual on `BookingRequest` (`accepted`/`in-progress`/`completed`/`paused` — not `pending`/`in-review`/`declined`), enforced on both send routes (403 if locked) and reflected in both thread panels (disabled composer, explanatory placeholder) and both list views (locked-state row copy instead of "No messages yet.").
+
+Separately, `chatBlocked` is an admin-only mute on top of that gate — the client keeps read access to a thread but their send route 403s until an admin unblocks them (`chat-block`/`chat-unblock`, above). The client composer shows a persistent banner (not just a placeholder) when blocked, and the admin thread header shows a "Client blocked" badge + toggle button.
+
+Attachments the receiving party hasn't fetched yet ("lazy" — image/video, not the sender's own, not already `downloaded`) show a tap-to-download icon instead of loading eagerly. If a booking's files have been permanently deleted (`filesDeleted`, see the client-delete route above), that lazy state is skipped entirely — every attachment (any type, tagged or not) renders straight into a non-interactive "This file is no longer available" placeholder, since a download would only ever fail. The same placeholder also covers the general case of an individual file that fails to load for any other reason (`onerror` on the `<img>`/`<video>`), including neutralizing the enclosing link so it doesn't still try to open a file viewer or download.
 
 ## User Flow
 

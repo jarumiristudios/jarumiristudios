@@ -20,11 +20,12 @@
 
 ## Payments
 - **Stripe** (no monthly fee — % per transaction only)
-- Flow: **Stripe Invoices** (not Payment Links) — two invoices per project
+- Flow: **Stripe Invoices** (not Payment Links) — two invoices per project, plus optional ad-hoc revision invoices
   1. Admin accepts booking + sets agreed price and a deposit due date → server creates Stripe customer + sends 30% deposit invoice with that `due_date`
   2. Client pays → webhook fires `invoice.payment_succeeded` → booking moves to `in-progress`; admin can now set a delivery date
   3. Work delivered → admin sends 70% final invoice
   4. Client pays → webhook fires again → booking moves to `completed`
+- **Revision invoices** — separate from the deposit/final pair, an admin can send any number of ad-hoc invoices for extra revision work (`revisionInvoices[]` on `BookingRequest`, admin-set amount defaulting to the `"Extra revision"` add-on price and an admin-picked due date), requires a Stripe customer to already exist (i.e. a deposit invoice has gone out at least once)
 - Invoices chosen over Payment Links for: formal paper trail, line items, auto-reminders, professional appearance
 - **Invoice expiry job** (`lib/invoiceExpiry.js`, renamed from `depositExpiry.js`) — in-process `setInterval`, runs hourly, no external cron dependency; two checks:
   - Deposit: auto-declines any `status: accepted` / `depositStatus: pending` booking whose `depositDueDate` has passed, voids the Stripe deposit invoice, and emails client + admin.
@@ -37,6 +38,7 @@
 - **Storage: Cloudflare R2** (S3-compatible object storage, `lib/r2.js`) — a custom multer storage engine (`lib/r2MulterStorage.js`) writes straight to R2 instead of local disk. Keys are flat (`<crCode>/<storedName>`); folder/category (`video`/`audio`/`image`/`other`/`deliverables`/`chat`) is a Mongo metadata field, never encoded in the key
 - Reads go through short-lived presigned URLs (`redirectToStoredFile()` in `server.js`) rather than proxying bytes through Express — supports Range requests for video scrubbing natively
 - A `backend: "local"|"r2"` field on every file-metadata record (shared shape in `models/shared/fileMetadata.js`) lets old (pre-migration) local-disk files and new R2 files coexist during the phased rollout — see `Plans/july26-milestone.md`'s Handoff section for migration status
+- Client-initiated hard-delete (`POST /dashboard/booking/:id/delete`, account delete) wipes raw uploads and chat attachments but **spares delivered final files** — `hardDeleteBookingFiles` skips the local `deliverables` subfolder and `deleteObjectsByPrefixExcept` (`lib/r2.js`) excludes their R2 keys from the batch-delete, so there's still a record of what was actually handed over even after a client deletes everything else
 - Users can also paste media links (YouTube, Google Drive, Dropbox, etc.) for content already hosted elsewhere
 - Telegram handle is an optional fallback field for files too large for the 250MB upload limit
 
