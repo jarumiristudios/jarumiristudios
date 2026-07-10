@@ -437,14 +437,16 @@
     <div class="flex flex-wrap items-center gap-3">
       <% if (canManage && booking.status !== 'paused') { %>
       <button type="button" onclick="pauseProject('<%= booking._id %>')"
-        class="px-5 py-2.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors cursor-pointer">
+        class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors cursor-pointer">
+        <iconify-icon icon="material-symbols-light:pause" width="17" height="17"></iconify-icon>
         Pause project
       </button>
       <% } %>
 
       <% if (canManage) { %>
       <button type="button" onclick="nudgeAdmin('<%= booking._id %>', '<%= booking.crCode %>')"
-        class="px-5 py-2.5 rounded-full bg-indigo-400/15 hover:bg-indigo-400/25 text-indigo-300 text-sm font-semibold border border-indigo-400/30 transition-colors cursor-pointer">
+        class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-indigo-400/15 hover:bg-indigo-400/25 text-indigo-300 text-sm font-semibold border border-indigo-400/30 transition-colors cursor-pointer">
+        <iconify-icon icon="material-symbols-light:notifications-active" width="17" height="17"></iconify-icon>
         Send nudge
       </button>
       <% } %>
@@ -452,7 +454,8 @@
       <form action="/dashboard/booking/<%= booking._id %>/delete" method="POST"
         onsubmit="return confirm('Delete this project? Uploaded files will be permanently removed. This cannot be undone.');">
         <button type="submit"
-          class="px-5 py-2.5 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-sm font-semibold transition-colors cursor-pointer">
+          class="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-red-500/90 hover:bg-red-500 text-white text-sm font-semibold transition-colors cursor-pointer">
+          <iconify-icon icon="material-symbols-light:delete" width="17" height="17"></iconify-icon>
           Delete project
         </button>
       </form>

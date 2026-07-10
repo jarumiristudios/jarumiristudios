@@ -3,5 +3,6 @@ node_modules/
 public/output.css
 uploads/
 scripts/auto-commit.log
+scripts/migration-manifest.json
 server.log
 Screenshot*.png

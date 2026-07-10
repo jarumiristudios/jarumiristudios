@@ -1,8 +1,69 @@
 # Journal
 
-## 2026-07-07 — Gate Chat Behind Booking Acceptance (uncommitted, in progress)
+## 2026-07-09 — Cloudflare R2 File Storage Migration (uncommitted, in progress)
 
-**What was built:** Currently uncommitted on top of the `clientType`/`platforms` work below. `BookingRequest` gained a `chatUnlocked` virtual (`models/BookingRequest.js`) — `true` for `accepted`/`in-progress`/`completed`/`paused`, `false` for `pending`/`in-review`/`declined`. Chat was previously reachable the moment a booking had a linked client account, with no status gate at all.
+**What was built:** Direct file uploads move off the Railway server's local disk onto Cloudflare R2 (S3-compatible object storage), since Railway's disk is ephemeral/non-persistent across redeploys — a growing correctness risk for an app whose whole product is "receive and deliver client files." Full rollout plan tracked in `Plans/july26-milestone.md`'s R2 section.
+
+- **Shared file-metadata schema.** `models/shared/fileMetadata.js` exports one `fileMetadataFields` object (`originalName`/`storedName`/`size`/`mimetype`/`folder`/`blurDataUrl`/`storageKey`/`backend`), spread into `BookingRequest.uploadedFiles`/`deliverableFiles` and `Message.attachment`/`attachments` (`models/BookingRequest.js`, `models/Message.js`) instead of each redeclaring the same shape. `backend: "local"|"r2"` is the field that lets old and new files coexist during rollout.
+- **R2 client + custom multer storage.** `lib/r2.js` wraps the AWS S3 SDK (`@aws-sdk/client-s3`, `@aws-sdk/lib-storage`, `@aws-sdk/s3-request-presigner`) against R2's S3-compatible endpoint: `putObject`/`streamUpload` (upload), `getPresignedDownloadUrl` (short-lived signed read URL), `deleteObject`/`deleteObjects`/`deleteObjectsByPrefix` (single, batch, and whole-booking-prefix delete — R2 has no recursive delete, so the prefix wipe is list-then-batch-delete), `headObject`/`listObjectKeys`. `lib/r2MulterStorage.js` implements multer's `_handleFile`/`_removeFile` storage-engine interface against it: images are buffered in memory (small, and the same buffer feeds `sharp()` for the existing blur-preview generation) while everything else streams straight through via a byte-counting `PassThrough`, so a 250MB video never fully lands in RAM or on disk. All three multer instances (`upload`, `deliverableUpload`, `chatUpload`, `server.js`) switched from `multer.diskStorage` to `createR2Storage()`.
+- **Flat keys, folder as metadata.** R2 object keys are `<crCode>/<storedName>` only — the `video`/`audio`/`image`/`other`/`deliverables`/`chat` distinction that used to be a disk subfolder is now purely a Mongo `folder` field. This means "promote a chat attachment to a project file" (an existing feature) no longer needs any object-storage operation at all, just a DB update — `moveStoredFile()` (`server.js`) now short-circuits to `true` immediately for `backend: "r2"` files.
+- **Read path.** `trySendStoredFile()` was replaced with `redirectToStoredFile()` (`server.js`) — takes the file's own Mongo subdocument, 302-redirects to a presigned R2 URL if `backend === "r2"`, otherwise falls back to the original active-path-then-`_archive` disk lookup. Presigned URLs support Range requests natively, so video scrubbing keeps working without Express having to proxy bytes or implement Range handling itself.
+- **Delete paths made R2-aware.** `archiveAndWipeBookingFiles()` (client hard-delete) now also calls `deleteObjectsByPrefix(`${crCode}/`)` alongside the existing local-disk wipe, so a booking's R2 objects are actually removed rather than orphaned. `softDeleteMessage()` and the single-deliverable-delete route branch per-file on `backend` (R2 delete vs. the old `fs.rm`).
+- **`uniqueFilename`/`fileTypeFromMime` extracted** to `lib/uploadUtils.js` — previously private helpers inside `server.js`, now shared with `lib/r2MulterStorage.js`.
+- **`generateBlurDataUrl()` signature changed** from taking a file path (read off disk) to taking the already-uploaded image buffer directly — the R2 storage engine already buffers images in memory for the R2 `putObject` call, so this reuses that buffer instead of a second disk/network read.
+- **Migration script.** `scripts/migrate-uploads-to-r2.js` — three phases (`upload`/`backfill`/`verify`), run manually via `node scripts/migrate-uploads-to-r2.js <phase>`, resumable via a local `scripts/migration-manifest.json` (gitignored) keyed by `storedName`. `upload` walks the local `uploads/` tree (both active and `_archive`), streams each file to R2, and verifies the upload by comparing `HeadObjectCommand`'s `ContentLength` against the local file size before marking it `"verified"` in the manifest — persisted after every single file so a crash loses at most one file's progress. `backfill` then writes `storageKey`/`folder`/`backend: "r2"` onto every matching `BookingRequest`/`Message` file-metadata subdocument. `verify` is read-only reconciliation (local file count vs. manifest vs. Mongo `backend:"r2"` doc count). Never deletes local files — that's a deliberate later step once a bake period passes.
+- **Found and fixed while wiring this up: `dotenv.config()` ordering bug.** `server.js` used to call `dotenv.config()` partway down the file, after several `require()`s — harmless before, because nothing at module-load time read `process.env`. `lib/r2.js` does (`const BUCKET = process.env.R2_BUCKET_NAME` etc. at the top level), and it's required (transitively, via `lib/r2MulterStorage.js`) before that old `dotenv.config()` call ran — so R2's env vars would've been `undefined` at client-construction time. Fixed by moving `dotenv.config()` to the very first line of `server.js`, before any other `require()`.
+
+**Decisions made:**
+- Flat R2 keys (no folder in the key) over mirroring the local `files/<folder>/` layout — makes the existing "tag/promote a file between folders" feature free (DB-only) instead of requiring an R2 copy+delete, and R2/S3 doesn't benefit from directory-style key nesting the way a filesystem does.
+- `backend` field per-file (not a global cutover flag) — lets the migration proceed booking-by-booking/file-by-file with local and R2 files coexisting indefinitely if needed, rather than requiring one atomic flip.
+- Presigned-redirect reads (not proxying bytes through Express) — keeps Range-request support (video scrubbing) working for free and avoids Express holding open a long-lived stream per download.
+- Migration script never deletes local files, even after a successful `verify` — local disk is kept as a safety net through a bake period; local-disk cleanup is a deliberate, separate, not-yet-taken step.
+- Not yet run against production — needs the 5 R2 env vars mirrored onto the Railway `jarumiristudios` service first (see `Plans/july26-milestone.md`).
+
+---
+
+## 2026-07-09 — Gate Deposit Invoice on In-Review Status; Coupons & Discounted Total on Client Dashboard
+
+**What was built:** Shipped in `e1ceca8`.
+
+- **Deposit invoice blocked from `pending`.** `POST /admin/booking/:id/send-deposit` (`server.js`) now redirects with an error ("Move status to In Review first...") unless `booking.status` is already `in-review`, `accepted`, or `in-progress`. Previously admin could accept-and-invoice straight from `pending`, which flips status to `accepted` and puts a payment ask in front of the client before they'd had any chance to upload files via their dashboard.
+- **Coupon breakdown surfaced on the client dashboard.** `dashboard-booking.ejs`'s pricing card now lists each applied `couponCodes[]` entry with its discount amount, and subtracts the total `discountAmount` from the displayed total — previously the dashboard showed the pre-discount `agreedPrice` with no visibility into which coupons applied or how much they saved, even though `/hire`'s own coupon chip UI already showed this at submission time.
+- **Informational card for `pending` bookings** added to the client dashboard, explaining the review-before-upload flow (why there's no payment ask or upload option yet) — pairs with the new send-deposit gate so the client isn't left wondering why nothing's happening.
+
+**Decisions made:**
+- Gate keyed on `status` (not a new flag) — `in-review` already exists as a distinct pipeline stage and is the natural signal that admin has looked at the request; no new field needed.
+
+---
+
+## 2026-07-09 — Production Build/Start Scripts for Tailwind CSS
+
+**What was built:** Shipped in `ab6783d`. `public/output.css` is gitignored and only ever produced locally by the `npm run tw` watch process — Railway's deploy had nothing generating it, so the live site was serving unstyled HTML. Added a one-shot `build` script (Nixpacks auto-runs `npm run build` on deploy) that runs a minified Tailwind CLI build instead of the watch mode. `@tailwindcss/cli` also moved from `devDependencies` to `dependencies`, since Nixpacks installs with `NODE_ENV=production`, which skips `devDependencies` entirely.
+
+**Decisions made:**
+- Minified one-shot build for production rather than shipping the watch process — a long-running watcher has no purpose once there's no local file-editing loop to react to.
+
+---
+
+## 2026-07-09 — Forgot/Reset Password Flow, Trust Proxy for Prod Cookies
+
+**What was built:** Shipped in `792192e`.
+
+- **New `PasswordResetToken` model** — `userId`, `tokenHash` (sha256 of a random 32-byte token; the raw token is only ever emailed, never stored), and a TTL index expiring the doc after 1 hour. `GET/POST /forgot-password` (`server.js`) always renders the same neutral "submitted" response whether or not the email matches an account, so the endpoint can't be used to enumerate registered emails — the actual token-creation-and-email branch only runs internally if a matching `User` exists.
+- **Reset rate-limited** at 3 attempts/hour per submitted email, via the same `LoginAttempt`-backed rolling-window pattern already used for `/login` — `isLoginLocked` was generalized into `isRateLimited(key, max, windowMs)` so both `/login` and `/forgot-password` share one implementation with different caps/windows.
+- **`GET/POST /reset-password/:token`** looks the token up by its hash, checks the 1-hour window server-side (not just relying on the TTL index, which is a background sweep and not instantaneous), and on success updates `user.password` (re-hashed by the existing `User` pre-save hook) and deletes all of that user's outstanding reset tokens.
+- **Trust proxy + secure cookies for prod.** `app.set("trust proxy", 1)` added — Railway/Cloudflare terminate TLS in front of the app, so without this, `req.secure` and Express's own protocol detection would always see plain HTTP from the app's perspective. Both the session cookie and the `jrmr_vid` visitor-id cookie gained `secure: process.env.NODE_ENV === "production"` so they're marked `Secure` in production (sent over HTTPS only) but still work over plain HTTP in local dev.
+
+**Decisions made:**
+- Neutral response on `/forgot-password` regardless of match — standard practice to avoid account-existence enumeration via a password-reset form.
+- Token stored as a hash, not the raw value — same rationale as password hashing itself: a DB read (backup leak, injection, etc.) shouldn't hand over usable reset tokens.
+- Reused the `LoginAttempt` model/pattern for reset rate-limiting instead of a new collection — same rolling-window shape, just a different key prefix (`reset:` vs `login:`) and different cap/window constants.
+
+---
+
+## 2026-07-07 — Gate Chat Behind Booking Acceptance
+
+**What was built:** Shipped in `99b22e3`, on top of the `clientType`/`platforms` work below. `BookingRequest` gained a `chatUnlocked` virtual (`models/BookingRequest.js`) — `true` for `accepted`/`in-progress`/`completed`/`paused`, `false` for `pending`/`in-review`/`declined`. Chat was previously reachable the moment a booking had a linked client account, with no status gate at all.
 
 - **Server-side enforcement, not just UI.** `attachCrCodeForClient` (`server.js`) now 403s with `{ error: "Chat opens once this project is accepted." }` if `!booking.chatUnlocked`, blocking the client's own send route before multer touches the request. The admin send route (`POST /admin/booking/:id/messages`, `server.js:1536`) got the same `chatUnlocked` check (403, "This project hasn't been accepted yet.") so admin can't message into a thread the client can't yet see as active either.
 - **Composer disabled, not hidden.** Both thread panels (`_message-thread-panel.ejs`, `admin/_message-thread-panel.ejs`) disable the attach button, file input, textarea, and send button when `!booking.chatUnlocked`, with placeholder copy explaining why ("Chat opens once this project is accepted." / admin's "This project hasn't been accepted yet."). The empty-state message swaps to the same explanation instead of "No messages yet."
@@ -12,7 +73,7 @@
 **Decisions made:**
 - Locked at `pending`/`in-review`/`declined` only — `paused` stays unlocked (chat was already open before a project got paused, no reason to yank it) and there's no unlock-then-relock path once a project reaches `accepted`.
 - Enforced on both send routes (client and admin) rather than just the client's — an admin could otherwise open an old bookmarked thread URL and message into a not-yet-accepted project, which the client couldn't see or reply within their own gated UI.
-- Not yet verified against the live server or committed — flagged here as in-progress so the journal doesn't go stale relative to the working tree.
+- Shipped and verified live as part of `99b22e3`.
 
 ---
 
@@ -36,9 +97,9 @@
 
 ---
 
-## 2026-07-07 — `/hire`: Client Type + Required External Links, Site-Wide Telegram Removal (uncommitted, in progress)
+## 2026-07-07 — `/hire`: Client Type + Required External Links, Site-Wide Telegram Removal
 
-**What was built:** Currently uncommitted on top of `896cf36`, spanning both booking-submission forms (`hire.ejs` for guests/first-time visitors, `dashboard-new.ejs` for logged-in clients — both post to the same `POST /hire` handler).
+**What was built:** Shipped in `99b22e3`, on top of `896cf36`, spanning both booking-submission forms (`hire.ejs` for guests/first-time visitors, `dashboard-new.ejs` for logged-in clients — both post to the same `POST /hire` handler).
 
 - **`clientType` (required).** `BookingRequest` gained a required enum field (`models/BookingRequest.js`): `"Independent Creator" | "Agency" | "Studio" | "Brand / Business" | "Other"`. Rendered as a new "You are a(n)" custom-select in step 1 of both forms, each option carrying a short description (e.g. Agency: "Managing this project on behalf of a client"). Validated client-side (`validateStep(1)`) and server-side in the existing required-field check in `POST /hire` (`server.js`).
 - **`platforms[]` (required, 1–3 entries).** New subdocument array on `BookingRequest` — `{ platform, handle }`, `platform` enum'd to `Instagram | Twitter | TikTok | OnlyFans | Fansly | Fanview | MannyVids | Pornhub | Other`, schema-validated to 1–3 entries (`MAX_PLATFORM_LINKS = 3`, `server.js`). UI is a platform-picker dropdown + handle/URL text input that commits each pair (Enter key or the check button, `addPlatformEntry()`) into a removable chip list — duplicated near-identically between `hire.ejs` and `dashboard-new.ejs` (`selectPlatformOption`/`addPlatformEntry`/`removePlatformEntry`/`renderPlatformBadges`/`linkPreview`/`linkHref`/`PLATFORM_DOMAINS`/`handlePath`). `POST /hire` parses parallel `platformNames[]`/`platformHandles[]` arrays into `platforms`, deduping nothing but capping at 3 and dropping any pair missing a platform or handle.
@@ -53,7 +114,7 @@
 **Decisions made:**
 - `clientType` and `platforms` required (not optional) on every booking, guest or account holder — read as a vetting/context step for admin reviewing a new request, not just a nice-to-have.
 - Platform link href-building only trusts a small hardcoded domain map or a URL the visitor typed themselves — never fabricates a domain for a platform it doesn't recognize (see the Fanview gap above), to avoid ever generating a wrong or misleading outbound link.
-- Not yet verified against the live server or committed — flagged here as in-progress so the journal doesn't go stale relative to the working tree.
+- Shipped and verified live as part of `99b22e3`.
 
 ---
 

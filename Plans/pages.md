@@ -12,6 +12,8 @@
 | `/track` | Project Tracker | Look up a booking by BR code or name + email combo; shows deposit due date notice while `depositStatus` is `pending`, estimated delivery date once admin sets it, and final deliverable downloads once `status === "completed"` |
 | `GET /track/:crCode/deliverables/:filename` | — | Public deliverable download — no session, gated on `status === "completed"` and the file belonging to that `crCode` (same trust model as the rest of `/track`: the BR code is the bearer token) |
 | `/login` | Client Login | Existing client login; supports `?next=` redirect and `?cr=` to link a just-submitted booking on login |
+| `/forgot-password` | Forgot Password | Requests a reset link by email; always renders the same neutral "submitted" response regardless of whether the email matches an account, to avoid leaking account existence |
+| `/reset-password/:token` | Reset Password | Sets a new password from a mailed reset link; token is looked up by its sha256 hash with a 1-hour TTL (`PasswordResetToken` model) |
 
 ## Authenticated (client login required)
 
@@ -52,7 +54,7 @@
 | `POST /admin/booking/:id/notes` | — | Append an admin note (`adminNotes` array, admin-only, not client-visible) |
 | `POST /admin/booking/:id/notes/:noteId/edit` | — | Edit the text of an existing admin note |
 | `POST /admin/booking/:id/notes/:noteId/delete` | — | Remove an admin note |
-| `POST /admin/booking/:id/send-deposit` | — | Create/reuse Stripe customer, send 30% deposit invoice with an admin-set due date (`due_date`), flips status to `accepted`, sends acceptance email |
+| `POST /admin/booking/:id/send-deposit` | — | Create/reuse Stripe customer, send 30% deposit invoice with an admin-set due date (`due_date`), flips status to `accepted`, sends acceptance email; blocked (redirects with an error) while `status === "pending"` — booking must reach `in-review` first so the client gets a window to upload files before seeing a payment ask |
 | `POST /admin/booking/:id/deposit-due-date` | — | Update (or clear) the deposit due date while `depositStatus === "pending"` |
 | `POST /admin/booking/:id/delivery-date` | — | Set/clear the estimated delivery date, only allowed once `depositStatus === "paid"` |
 | `POST /admin/booking/:id/send-final` | — | Send 70% final invoice once deposit is paid |

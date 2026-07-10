@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const fileMetadataFields = require("./shared/fileMetadata");
 
 const bookingRequestSchema = new mongoose.Schema(
   {
@@ -35,25 +36,8 @@ const bookingRequestSchema = new mongoose.Schema(
       ],
       validate: { validator: (v) => v.length >= 1 && v.length <= 3, message: "Add between 1 and 3 external links." },
     },
-    uploadedFiles: [
-      {
-        originalName: String,
-        storedName: String,
-        size: Number,
-        mimetype: String,
-        blurDataUrl: String,
-      },
-    ],
-    deliverableFiles: [
-      {
-        originalName: String,
-        storedName: String,
-        size: Number,
-        mimetype: String,
-        blurDataUrl: String,
-        uploadedAt: { type: Date, default: Date.now },
-      },
-    ],
+    uploadedFiles: [{ ...fileMetadataFields }],
+    deliverableFiles: [{ ...fileMetadataFields, uploadedAt: { type: Date, default: Date.now } }],
     status: {
       type: String,
       enum: ["pending", "in-review", "accepted", "declined", "in-progress", "completed", "paused"],

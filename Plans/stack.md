@@ -33,10 +33,12 @@
 - **Stale-payment guard on the webhook** — `invoice.payment_succeeded` no longer blindly auto-progresses `status`. If the booking is `archived`, `declined`, or `paused` when a payment lands (e.g. an invoice that was still live when the project's state changed underneath it), the payment is still recorded (`depositStatus`/`finalPaymentStatus` → `paid`) but `status` is left alone and admin gets a distinct "payment on inactive project" alert (`sendAdminUnexpectedPaymentAlert`) instead of the normal one — so a stale-but-not-yet-expired link can't silently resurrect/complete a project nobody's tracking anymore.
 
 ## File Delivery
-- Direct upload via `multer` on `/hire` — up to 250MB per file, 20 files per submission, stored on the Railway server disk under `uploads/<brCode>/files/<video|audio|image|other>/`
+- Direct upload via `multer` on `/hire` — up to 250MB per file, 20 files per submission
+- **Storage: Cloudflare R2** (S3-compatible object storage, `lib/r2.js`) — a custom multer storage engine (`lib/r2MulterStorage.js`) writes straight to R2 instead of local disk. Keys are flat (`<crCode>/<storedName>`); folder/category (`video`/`audio`/`image`/`other`/`deliverables`/`chat`) is a Mongo metadata field, never encoded in the key
+- Reads go through short-lived presigned URLs (`redirectToStoredFile()` in `server.js`) rather than proxying bytes through Express — supports Range requests for video scrubbing natively
+- A `backend: "local"|"r2"` field on every file-metadata record (shared shape in `models/shared/fileMetadata.js`) lets old (pre-migration) local-disk files and new R2 files coexist during the phased rollout — see `Plans/july26-milestone.md`'s Handoff section for migration status
 - Users can also paste media links (YouTube, Google Drive, Dropbox, etc.) for content already hosted elsewhere
 - Telegram handle is an optional fallback field for files too large for the 250MB upload limit
-- No external/cloud object storage (S3, etc.) — disk storage on the host is the v1 tradeoff
 
 ## Email
 - **Nodemailer** via Gmail SMTP (`PERSONAL_GMAIL` + app password)

@@ -20,6 +20,7 @@
       padding: 16px 20px;
       border-bottom: 1px solid rgba(255,255,255,0.05);
       transition: background 0.15s;
+      text-decoration: none; color: inherit;
     }
     .notif-row:last-child { border-bottom: none; }
     .notif-row.unread { background: rgba(255,255,255,0.015); }
@@ -106,23 +107,24 @@
         else if (diffDays < 7)   timeLabel = diffDays + 'd ago';
         else                     timeLabel = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       %>
-      <div class="notif-row <%= isUnread ? 'unread' : 'read' %>">
+      <% const RowTag = n.bookingId ? 'a' : 'div'; %>
+      <<%= RowTag %><% if (n.bookingId) { %> href="/admin/booking/<%= n.bookingId %>"<% } %> class="notif-row <%= isUnread ? 'unread' : 'read' %>">
         <div class="notif-icon <%= ic.cls %>">
           <iconify-icon icon="<%= ic.icon %>" width="17" height="17" style="color:<%= ic.color %>"></iconify-icon>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm text-gray-200 leading-snug"><%= n.message %></p>
+          <p class="text-sm text-gray-200 leading-snug"><%- n.message %></p>
           <div class="flex items-center gap-3 mt-1.5">
             <span class="text-xs text-gray-600"><%= timeLabel %></span>
             <% if (n.bookingId) { %>
-            <a href="/admin/booking/<%= n.bookingId %>" class="text-xs text-amber-400 hover:text-amber-300 transition-colors font-medium">View project →</a>
+            <span class="text-xs text-amber-400 font-medium">View project →</span>
             <% } %>
           </div>
         </div>
         <% if (isUnread) { %>
         <div class="unread-dot"></div>
         <% } %>
-      </div>
+      </<%= RowTag %>>
       <% }) %>
     </div>
     <% } %>

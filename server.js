@@ -1,6 +1,7 @@
+const dotenv = require("dotenv");
+dotenv.config(); // must run before any local require() that reads process.env at module load time (e.g. lib/r2.js)
 const express = require("express");
 const mongoose = require("mongoose");
-const dotenv = require("dotenv");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -21,6 +22,9 @@ const LoginAttempt = require("./models/LoginAttempt");
 const PasswordResetToken = require("./models/PasswordResetToken");
 const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
+const { fileTypeFromMime, uniqueFilename } = require("./lib/uploadUtils");
+const { createR2Storage } = require("./lib/r2MulterStorage");
+const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefix } = require("./lib/r2");
 
 function endOfDay(dateStr) {
   if (!dateStr) return null;
@@ -105,8 +109,6 @@ function getStatusGate(currentStatus) {
   for (const s of BOOKING_STATUSES) gate[s] = isStatusChangeAllowed(currentStatus, s);
   return gate;
 }
-
-dotenv.config();
 
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
@@ -216,6 +218,7 @@ const sessionMiddleware = session({
   cookie: {
     maxAge: 8 * 60 * 60 * 1000, // 8 hours
     secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
   },
 });
 app.use(sessionMiddleware);
@@ -265,28 +268,32 @@ mongoose
   })
   .catch((err) => console.error("MongoDB error:", err));
 
-// File upload (multer)
-function fileTypeFromMime(mimetype) {
-  if (/^video\//i.test(mimetype)) return "video";
-  if (/^audio\//i.test(mimetype)) return "audio";
-  if (/^image\//i.test(mimetype)) return "image";
-  return "other";
-}
+// File upload (multer) — fileTypeFromMime/uniqueFilename live in lib/uploadUtils.js now,
+// shared with lib/r2MulterStorage.js.
 
-// Checks the active uploads path, then the _archive path, for a given booking/type/filename.
-// Sends the file and returns true if found in either location; returns false otherwise (caller decides the fallback).
-function trySendStoredFile(res, crCode, type, filename) {
-  const activePath = path.join(__dirname, "uploads", crCode, "files", type, filename);
+// Serves a stored file's bytes given its Mongo metadata subdoc: a presigned redirect for the
+// R2 backend, or the legacy on-disk lookup (active path, then _archive) for files not yet
+// migrated. `fileDoc` is the uploadedFiles/deliverableFiles/attachment subdocument itself.
+async function redirectToStoredFile(res, crCode, folder, filename, fileDoc) {
+  if (fileDoc?.backend === "r2" && fileDoc.storageKey) {
+    const url = await getPresignedDownloadUrl(fileDoc.storageKey);
+    res.redirect(302, url);
+    return true;
+  }
+  const activePath = path.join(__dirname, "uploads", crCode, "files", folder, filename);
   if (fs.existsSync(activePath)) { res.sendFile(activePath); return true; }
-  const archivePath = path.join(__dirname, "uploads", "_archive", crCode, "files", type, filename);
+  const archivePath = path.join(__dirname, "uploads", "_archive", crCode, "files", folder, filename);
   if (fs.existsSync(archivePath)) { res.sendFile(archivePath); return true; }
   return false;
 }
 
-// Renames a stored file from one files/<folder>/ subfolder to another, checking the active
-// path then the _archive path (same convention as trySendStoredFile) and staying within
-// whichever one the file is actually found in. Returns true on success.
-function moveStoredFile(crCode, fromFolder, toFolder, filename) {
+// Moves a stored file from one logical folder to another. R2-backed files need no
+// object-storage operation at all — the R2 key is flat and never encoded folder, so the
+// caller just needs to update the fileDoc's `folder` field itself (see call sites). Local-backed
+// (pre-migration) files fall back to the original disk rename, checking the active path then
+// the _archive path and staying within whichever one the file is actually found in.
+function moveStoredFile(crCode, fromFolder, toFolder, filename, fileDoc) {
+  if (fileDoc?.backend === "r2") return true;
   for (const base of [path.join(__dirname, "uploads", crCode), path.join(__dirname, "uploads", "_archive", crCode)]) {
     const from = path.join(base, "files", fromFolder, filename);
     if (fs.existsSync(from)) {
@@ -448,6 +455,12 @@ function writeBookingTxt(booking) {
   fs.writeFileSync(path.join(dir, "booking.txt"), lines.join("\n"), "utf8");
 }
 
+// AdminNotification.message is rendered as raw HTML in the admin UI (for the bold/colored
+// cost label below), so any user-controlled text folded into it must be escaped here first.
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function notifyAdminNewBooking(booking) {
   const basePrice = TIER_PRICES[booking.pricingTier];
   const costLabel = basePrice !== undefined
@@ -458,7 +471,7 @@ function notifyAdminNewBooking(booking) {
     bookingId: booking._id,
     crCode: booking.crCode,
     type: "new_booking",
-    message: `New booking request from ${booking.name} (${booking.crCode}) — ${costLabel}.`,
+    message: `New booking request from "${escapeHtml(booking.name)}" (${booking.crCode}) — <strong class="font-bold text-amber-400">${escapeHtml(costLabel)}</strong>.`,
   }).catch((err) => console.error("Error creating admin new-booking notification:", err.message));
 }
 
@@ -484,12 +497,15 @@ function messagePreview(body, attachments) {
 // they still belong to the project regardless of this message being deleted.
 async function softDeleteMessage(message) {
   if (message.deleted) return;
-  messageAttachments(message)
-    .filter((a) => (a.folder || "chat") === "chat")
-    .forEach((a) => {
-      fs.rm(path.join(__dirname, "uploads", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
-      fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
-    });
+  const chatAttachments = messageAttachments(message).filter((a) => (a.folder || "chat") === "chat");
+  await Promise.all(chatAttachments.map(async (a) => {
+    if (a.backend === "r2") {
+      await deleteObject(a.storageKey).catch((err) => console.error("R2 delete error:", err.message));
+      return;
+    }
+    fs.rm(path.join(__dirname, "uploads", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
+    fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
+  }));
   message.deleted = true;
   message.body = "";
   message.attachment = undefined;
@@ -564,10 +580,14 @@ function hardDeleteBookingFiles(crCode) {
 // Client-initiated "delete" — unlike admin archive (which just hides a project, files intact
 // and restorable), this is meant to be irreversible: media is wiped and only the booking.txt
 // record survives, tucked into _archive alongside admin-archived projects.
-function archiveAndWipeBookingFiles(crCode) {
+async function archiveAndWipeBookingFiles(crCode) {
   if (!crCode) return;
   try {
     retrySync(() => hardDeleteBookingFiles(crCode));
+    // R2 keys are flat (`<crCode>/<storedName>`), so one prefix wipes every uploaded file,
+    // deliverable, and chat attachment for this booking in a single list+batch-delete —
+    // covers what the local recursive rm above did for any files already on R2.
+    await deleteObjectsByPrefix(`${crCode}/`);
     const archiveDir = path.join(__dirname, "uploads", "_archive");
     fs.mkdirSync(archiveDir, { recursive: true });
     retrySync(() => fs.renameSync(path.join(__dirname, "uploads", crCode), path.join(archiveDir, crCode)));
@@ -576,19 +596,16 @@ function archiveAndWipeBookingFiles(crCode) {
   }
 }
 
-function uniqueFilename(originalname) {
-  const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
-  return `${unique}${path.extname(originalname)}`;
-}
-
 // Tiny (24px-wide) heavily-blurred JPEG preview, inlined as a data URL, so a not-yet-downloaded
 // image attachment can show a hint of its content behind the download prompt without the
 // receiver's browser fetching the full file. Images only — no video frame extraction (no ffmpeg
 // dependency in this project). Never throws: a failed/unsupported source just yields no preview.
-async function generateBlurDataUrl(filePath, mimetype) {
-  if (!/^image\//i.test(mimetype)) return undefined;
+// Takes the image's buffer directly (the R2 storage engine buffers images anyway, to feed
+// both the R2 upload and this preview from the same in-memory bytes — no disk read needed).
+async function generateBlurDataUrl(buffer, mimetype) {
+  if (!/^image\//i.test(mimetype) || !buffer) return undefined;
   try {
-    const buf = await sharp(filePath).resize(32, 32, { fit: "inside" }).blur(0.5).jpeg({ quality: 50 }).toBuffer();
+    const buf = await sharp(buffer).resize(32, 32, { fit: "inside" }).blur(0.5).jpeg({ quality: 50 }).toBuffer();
     return `data:image/jpeg;base64,${buf.toString("base64")}`;
   } catch {
     return undefined;
@@ -628,31 +645,18 @@ function restrictToAllowedMediaTypes(req, file, cb) {
   });
 }
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const type = fileTypeFromMime(file.mimetype);
-    const dir = path.join(__dirname, "uploads", req.crCode, "files", type);
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
-});
+// All three multer instances below write straight to R2 (see lib/r2MulterStorage.js) instead
+// of local disk — the R2 key is flat (`<crCode>/<storedName>`), so "folder" (video/audio/
+// image/other/deliverables/chat) is decided by each upload-completion handler and stored as
+// Mongo metadata only, never encoded in the key itself.
 const upload = multer({
-  storage,
+  storage: createR2Storage(),
   limits: { fileSize: MEMBER_MAX_FILE_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
-// Admin-uploaded final deliverables — separate storage so they never mix with client-submitted raw files
-const deliverableStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, "uploads", req.crCode, "files", "deliverables");
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
-});
+// Admin-uploaded final deliverables — separate multer instance so they never mix with client-submitted raw files
 const deliverableUpload = multer({
-  storage: deliverableStorage,
+  storage: createR2Storage(),
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
   fileFilter: rejectDangerousFiles,
 });
@@ -661,16 +665,8 @@ const deliverableUpload = multer({
 // main upload system above is for), so a smaller cap than member uploads.
 const CHAT_ATTACHMENT_MAX_SIZE = 1024 * 1024 * 1024; // 1 GB
 const CHAT_MAX_ATTACHMENTS = 10;
-const chatStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, "uploads", req.crCode, "files", "chat");
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => cb(null, uniqueFilename(file.originalname)),
-});
 const chatUpload = multer({
-  storage: chatStorage,
+  storage: createR2Storage(),
   limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
@@ -831,7 +827,10 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       storedName: f.filename,
       size: f.size,
       mimetype: f.mimetype,
-      blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+      folder: fileTypeFromMime(f.mimetype),
+      storageKey: f.storageKey,
+      backend: f.backend,
+      blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
     })));
 
     // Validate coupon server-side
@@ -1275,7 +1274,10 @@ app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, 
     storedName: f.filename,
     size: f.size,
     mimetype: f.mimetype,
-    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+    folder: fileTypeFromMime(f.mimetype),
+    storageKey: f.storageKey,
+    backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
   })));
 
   const booking = req.booking;
@@ -1622,7 +1624,8 @@ app.post("/admin/booking/:id/messages", requireAdmin, async (req, res, next) => 
 
   const attachments = await Promise.all((req.files || []).map(async (f) => ({
     originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
-    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+    storageKey: f.storageKey, backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
   })));
   const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, false);
   if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
@@ -1697,7 +1700,7 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
     att.downloaded = true;
     await message.save();
   }
-  if (trySendStoredFile(res, message.crCode, att.folder || "chat", filename)) return;
+  if (await redirectToStoredFile(res, message.crCode, att.folder || "chat", filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -1717,11 +1720,11 @@ app.post("/admin/messages/attachments/:filename/save-to-project", requireAdmin, 
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
   const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, "chat", type, filename)) {
+  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
-  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl });
+  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl, storageKey: att.storageKey, backend: att.backend, folder: type });
   await booking.save();
 
   att.folder = type;
@@ -1805,7 +1808,10 @@ app.post("/admin/booking/:id/deliverables", requireAdmin, attachCrCode, (req, re
     storedName: f.filename,
     size: f.size,
     mimetype: f.mimetype,
-    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+    folder: "deliverables",
+    storageKey: f.storageKey,
+    backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
   })));
   if (newFiles.length === 0) {
     return res.redirect(`/admin/booking/${req.params.id}?deliverError=${encodeURIComponent("No files were selected.")}`);
@@ -1832,8 +1838,12 @@ app.post("/admin/booking/:id/deliverables/:fileId/delete", requireAdmin, async (
   if (booking && !booking.archived) {
     const file = booking.deliverableFiles.id(req.params.fileId);
     if (file) {
-      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
-      fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+      if (file.backend === "r2") {
+        await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
+      } else {
+        fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+        fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+      }
       booking.deliverableFiles.pull(req.params.fileId);
       await booking.save();
     }
@@ -2207,8 +2217,9 @@ app.get("/admin/uploads/:filename", requireAdmin, async (req, res) => {
   });
   if (booking) {
     const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
-    const type = uploadedMatch ? fileTypeFromMime(uploadedMatch.mimetype) : "deliverables";
-    if (trySendStoredFile(res, booking.crCode, type, filename)) return;
+    const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
+    const folder = fileDoc.folder || (uploadedMatch ? fileTypeFromMime(fileDoc.mimetype) : "deliverables");
+    if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
   }
   res.sendFile(path.join(__dirname, "uploads", filename));
 });
@@ -2306,7 +2317,8 @@ app.post("/dashboard/messages/:id", requireClient, attachCrCodeForClient, (req, 
 
   const attachments = await Promise.all((req.files || []).map(async (f) => ({
     originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
-    blurDataUrl: await generateBlurDataUrl(f.path, f.mimetype),
+    storageKey: f.storageKey, backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
   })));
   const tagged = resolveTaggedAttachments(req.booking, req.body.taggedFiles, true);
   if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
@@ -2355,7 +2367,7 @@ app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, 
     att.downloaded = true;
     await message.save();
   }
-  if (trySendStoredFile(res, message.crCode, folder, filename)) return;
+  if (await redirectToStoredFile(res, message.crCode, folder, filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -2376,11 +2388,11 @@ app.post("/dashboard/messages/attachments/:filename/save-to-project", requireCli
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
   const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, "chat", type, filename)) {
+  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
-  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl });
+  booking.uploadedFiles.push({ originalName: att.originalName, storedName: att.storedName, size: att.size, mimetype: att.mimetype, blurDataUrl: att.blurDataUrl, storageKey: att.storageKey, backend: att.backend, folder: type });
   await booking.save();
 
   att.folder = type;
@@ -2434,8 +2446,8 @@ app.get("/dashboard/uploads/:filename", requireClient, async (req, res) => {
   });
   if (!booking) return res.sendStatus(403);
   const fileInfo = booking.uploadedFiles.find(f => f.storedName === filename);
-  const type = fileTypeFromMime(fileInfo.mimetype);
-  if (trySendStoredFile(res, booking.crCode, type, filename)) return;
+  const folder = fileInfo.folder || fileTypeFromMime(fileInfo.mimetype);
+  if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileInfo)) return;
   res.sendFile(path.join(__dirname, "uploads", filename));
 });
 
@@ -2446,7 +2458,8 @@ app.get("/dashboard/deliverables/:filename", requireClient, async (req, res) => 
     "deliverableFiles.storedName": filename,
   });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
-  if (trySendStoredFile(res, booking.crCode, "deliverables", filename)) return;
+  const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
+  if (await redirectToStoredFile(res, booking.crCode, "deliverables", filename, fileInfo)) return;
   res.sendStatus(404);
 });
 
@@ -2455,7 +2468,8 @@ app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
   const filename = path.basename(req.params.filename);
   const booking = await BookingRequest.findOne({ crCode, "deliverableFiles.storedName": filename });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
-  if (trySendStoredFile(res, booking.crCode, "deliverables", filename)) return;
+  const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
+  if (await redirectToStoredFile(res, booking.crCode, "deliverables", filename, fileInfo)) return;
   res.sendStatus(404);
 });
 
