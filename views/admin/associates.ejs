@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Associates | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+    .form-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .form-input:focus { border-color: rgba(245,158,11,0.5); }
+    .form-input::placeholder { color: #4b5563; }
+    .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="text-white font-semibold text-sm">Associates</span>
+      </div>
+      <div class="flex items-center gap-5">
+        <a href="/admin/roles" class="text-sm text-gray-500 hover:text-white transition-colors">Roles</a>
+        <a href="/admin/coupons" class="text-sm text-gray-500 hover:text-white transition-colors">Coupons</a>
+        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Messages
+          <% if (locals.adminUnreadMessageCount > 0) { %>
+          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Notifications
+          <% if (locals.adminUnreadCount > 0) { %>
+          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-6 py-10 space-y-8">
+
+    <!-- Create associate -->
+    <div class="card">
+      <h2 class="text-base font-semibold text-white mb-5">Create associate</h2>
+      <form action="/admin/associates" method="POST">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <p class="detail-label mb-1">Name</p>
+            <input type="text" name="name" required placeholder="e.g. Jamie Lee" class="form-input" />
+          </div>
+          <div>
+            <p class="detail-label mb-1">Email</p>
+            <input type="email" name="email" required placeholder="jamie@example.com" class="form-input" />
+          </div>
+          <div>
+            <p class="detail-label mb-1">Password</p>
+            <input type="text" name="password" required minlength="8" placeholder="At least 8 characters" class="form-input" />
+          </div>
+        </div>
+        <button type="submit"
+          class="px-6 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-black text-sm font-semibold transition-colors">
+          Create associate
+        </button>
+      </form>
+    </div>
+
+    <!-- Associate list -->
+    <div>
+      <h2 class="text-base font-semibold text-white mb-4">All associates <span class="text-gray-600 font-normal text-sm"><%= associates.length %></span></h2>
+
+      <% if (associates.length === 0) { %>
+      <div class="card text-center py-10">
+        <p class="text-gray-500 text-sm">No associates yet. Create one above.</p>
+      </div>
+      <% } else { %>
+      <div class="space-y-3">
+        <% associates.forEach(a => { %>
+        <div class="card py-4! flex items-center justify-between gap-4 flex-wrap">
+          <div class="flex items-center gap-4 flex-wrap min-w-0">
+            <span class="text-white font-semibold text-sm"><%= a.name %></span>
+            <span class="text-gray-500 text-xs"><%= a.email %></span>
+            <span class="text-xs font-semibold <%= a.active ? 'text-green-400' : 'text-gray-500' %>"><%= a.active ? 'Active' : 'Disabled' %></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button type="button" onclick="document.getElementById('reset-form-<%= a._id %>').classList.toggle('hidden')"
+              class="text-xs font-semibold px-4 py-1.5 rounded-full border border-white/10 hover:border-white/30 text-gray-400 transition-colors">
+              Reset password
+            </button>
+            <form action="/admin/associates/<%= a._id %>/toggle" method="POST">
+              <button type="submit"
+                class="text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors <%= a.active ? 'border-white/10 hover:border-white/30' : 'border-amber-400/30 hover:border-amber-400/60' %>"
+                style="color: <%= a.active ? '#9ca3af' : '#fbbf24' %>">
+                <%= a.active ? 'Disable' : 'Enable' %>
+              </button>
+            </form>
+          </div>
+          <form id="reset-form-<%= a._id %>" action="/admin/associates/<%= a._id %>/reset-password" method="POST" class="hidden w-full flex items-center gap-2 pt-3 mt-1 border-t border-white/5">
+            <input type="text" name="password" required minlength="8" placeholder="New password (at least 8 characters)" class="form-input flex-1" />
+            <button type="submit" class="text-xs font-semibold px-4 py-2 rounded-full bg-amber-400 hover:bg-amber-300 text-black transition-colors shrink-0">Save</button>
+          </form>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+
+  </main>
+
+  <%- include('../_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>

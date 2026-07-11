@@ -66,6 +66,7 @@ const bookingRequestSchema = new mongoose.Schema(
     ],
     discountAmount: { type: Number, default: 0 },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "Associate", default: null },
     revisions: [
       {
         message: { type: String, required: true, trim: true },

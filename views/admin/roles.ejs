@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Roles | Jarumiri Admin</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 24px; }
+    .form-input {
+      width: 100%;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: #fff;
+      font-size: 13px;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+      resize: vertical;
+    }
+    .form-input:focus { border-color: rgba(245,158,11,0.5); }
+    .form-input::placeholder { color: #4b5563; }
+    .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/admin" class="text-gray-500 hover:text-white transition-colors text-sm">← All requests</a>
+        <span class="text-white/10">|</span>
+        <span class="text-white font-semibold text-sm">Roles</span>
+      </div>
+      <div class="flex items-center gap-5">
+        <a href="/admin/coupons" class="text-sm text-gray-500 hover:text-white transition-colors">Coupons</a>
+        <a href="/admin/associates" class="text-sm text-gray-500 hover:text-white transition-colors">Associates</a>
+        <a href="/admin/messages" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Messages
+          <% if (locals.adminUnreadMessageCount > 0) { %>
+          <span style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadMessageCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/notifications" id="admin-notif-bell" class="inline-flex items-center gap-1.5 text-sm text-gray-500 hover:text-white transition-colors">
+          Notifications
+          <% if (locals.adminUnreadCount > 0) { %>
+          <span id="admin-notif-count" style="display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:11px;font-weight:700;"><%= adminUnreadCount %></span>
+          <% } %>
+        </a>
+        <a href="/admin/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-4xl mx-auto px-6 py-10 space-y-8">
+
+    <!-- Create role -->
+    <div class="card">
+      <h2 class="text-base font-semibold text-white mb-5">Create role</h2>
+      <form action="/admin/roles" method="POST">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+          <div class="sm:col-span-3">
+            <p class="detail-label mb-1">Title</p>
+            <input type="text" name="title" required placeholder="e.g. Video Editor" class="form-input" />
+          </div>
+          <div>
+            <p class="detail-label mb-1">Emoji</p>
+            <input type="text" name="emoji" placeholder="🎬" class="form-input" />
+          </div>
+          <div class="sm:col-span-4">
+            <p class="detail-label mb-1">Description</p>
+            <textarea name="description" required rows="3" placeholder="What the role involves..." class="form-input"></textarea>
+          </div>
+          <div class="sm:col-span-3">
+            <p class="detail-label mb-1">Requirements <span class="text-gray-600 font-normal normal-case">(one per line)</span></p>
+            <textarea name="requirements" rows="3" placeholder="Short-form &amp; long-form editing&#10;Color grading fundamentals" class="form-input"></textarea>
+          </div>
+          <div>
+            <p class="detail-label mb-1">Order</p>
+            <input type="number" name="order" value="0" class="form-input" />
+          </div>
+        </div>
+        <button type="submit"
+          class="px-6 py-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-black text-sm font-semibold transition-colors">
+          Create role
+        </button>
+      </form>
+    </div>
+
+    <!-- Role list -->
+    <div>
+      <h2 class="text-base font-semibold text-white mb-4">All roles <span class="text-gray-600 font-normal text-sm"><%= roles.length %></span></h2>
+
+      <% if (roles.length === 0) { %>
+      <div class="card text-center py-10">
+        <p class="text-gray-500 text-sm">No roles yet. Create one above.</p>
+      </div>
+      <% } else { %>
+      <div class="space-y-3">
+        <% roles.forEach(r => { %>
+        <div class="card py-4! flex items-center justify-between gap-4 flex-wrap">
+          <div class="flex items-center gap-4 flex-wrap min-w-0">
+            <span class="text-xl"><%= r.emoji %></span>
+            <span class="text-white font-semibold text-sm"><%= r.title %></span>
+            <span class="text-gray-500 text-xs">Order <%= r.order %></span>
+            <span class="text-xs font-semibold <%= r.active ? 'text-green-400' : 'text-gray-500' %>"><%= r.active ? 'Active' : 'Disabled' %></span>
+          </div>
+          <div class="flex items-center gap-2">
+            <form action="/admin/roles/<%= r._id %>/toggle" method="POST">
+              <button type="submit"
+                class="text-xs font-semibold px-4 py-1.5 rounded-full border transition-colors <%= r.active ? 'border-white/10 hover:border-white/30' : 'border-amber-400/30 hover:border-amber-400/60' %>"
+                style="color: <%= r.active ? '#9ca3af' : '#fbbf24' %>">
+                <%= r.active ? 'Disable' : 'Enable' %>
+              </button>
+            </form>
+            <form action="/admin/roles/<%= r._id %>/delete" method="POST">
+              <button type="submit"
+                class="text-xs font-semibold px-4 py-1.5 rounded-full border border-red-500/20 text-red-400 hover:border-red-500/50 transition-colors">
+                Delete
+              </button>
+            </form>
+          </div>
+        </div>
+        <% }) %>
+      </div>
+      <% } %>
+    </div>
+
+  </main>
+
+  <%- include('../_toast') %>
+  <%- include('_notif-poll') %>
+</body>
+</html>

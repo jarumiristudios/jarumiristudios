@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title><%= booking.crCode %> | Associate Portal</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    button, a { cursor: pointer; }
+    button:disabled { cursor: not-allowed; }
+    .status-badge {
+      display: inline-flex; align-items: center;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 4px 12px; border-radius: 999px;
+    }
+    .detail-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7280; margin-bottom: 4px; }
+    .detail-value { font-size: 14px; color: #e5e7eb; }
+    .card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 16px; }
+    .status-btn {
+      font-size: 12px; font-weight: 600; padding: 8px 16px; border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #9ca3af; background: transparent;
+      transition: all 0.15s ease;
+    }
+    .status-btn:hover  { border-color: rgba(255,255,255,0.3); color: #fff; }
+    .status-btn.active { border-color: transparent; }
+    .status-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .status-btn:disabled:hover { border-color: rgba(255,255,255,0.1); color: #9ca3af; }
+    .status-btn.active.s-pending     { background: rgba(245,158,11,0.15); color: #f59e0b; border-color: rgba(245,158,11,0.3); }
+    .status-btn.active.s-in-review  { background: rgba(99,102,241,0.15);  color: #818cf8; border-color: rgba(99,102,241,0.3); }
+    .status-btn.active.s-accepted   { background: rgba(34,197,94,0.15);   color: #4ade80; border-color: rgba(34,197,94,0.3); }
+    .status-btn.active.s-declined   { background: rgba(239,68,68,0.15);   color: #f87171; border-color: rgba(239,68,68,0.3); }
+    .status-btn.active.s-in-progress { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
+    .status-btn.active.s-completed  { background: rgba(16,185,129,0.15);  color: #34d399; border-color: rgba(16,185,129,0.3); }
+    .status-btn.active.s-paused     { background: rgba(167,139,250,0.15); color: #a78bfa; border-color: rgba(167,139,250,0.3); }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <header class="border-b border-white/5 bg-[#080808]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <a href="/associate" class="text-gray-500 hover:text-white transition-colors text-sm">← My projects</a>
+        <span class="text-white/10">|</span>
+        <span class="font-mono text-amber-400 text-sm font-semibold"><%= booking.crCode %></span>
+      </div>
+      <a href="/associate/logout" class="text-sm text-gray-500 hover:text-white transition-colors">Sign out</a>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+
+    <!-- Status picker -->
+    <div class="flex flex-col sm:flex-row sm:items-start gap-6">
+      <div class="card p-4! flex flex-col gap-3 w-full">
+        <p class="detail-label">Status</p>
+        <% if (locals.statusError) { %>
+        <div class="px-3 py-2 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-xs">
+          <%= statusError %>
+        </div>
+        <% } %>
+        <div class="flex flex-wrap gap-2">
+          <% ['pending','in-review','accepted','declined','in-progress','paused','completed'].forEach(s => {
+               const isCurrent = booking.status === s;
+               const isAllowed = isCurrent || (locals.statusGate ? statusGate[s] : true);
+               const hint = isCurrent ? '' : (isAllowed ? '' : (locals.statusGateHints?.[s] || statusGateTerminalHint));
+          %>
+          <form action="/associate/booking/<%= booking._id %>/status" method="POST" style="display:inline;">
+            <input type="hidden" name="status" value="<%= s %>" />
+            <button type="submit"
+              class="status-btn s-<%= s %> <%= isCurrent ? 'active' : '' %>"
+              <%= isAllowed ? '' : 'disabled' %>
+              <%= hint ? `title="${hint}"` : '' %>>
+              <%= s %>
+            </button>
+          </form>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+
+      <div class="md:col-span-2 space-y-6">
+
+        <!-- Project details -->
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-5">Project details</h2>
+          <div class="grid grid-cols-2 gap-5 mb-5">
+            <div>
+              <p class="detail-label">Services</p>
+              <p class="detail-value"><%= booking.serviceType.join(', ') %></p>
+            </div>
+            <div>
+              <p class="detail-label">Package</p>
+              <p class="detail-value">
+                <%= booking.pricingTier %>
+                <% if (booking.pricingTier === 'Custom' && booking.budget) { %>
+                <span class="text-amber-400 ml-1">(<%= booking.budget %>)</span>
+                <% } %>
+              </p>
+            </div>
+            <% if (booking.addOns && booking.addOns.length > 0) { %>
+            <div class="col-span-2">
+              <p class="detail-label">Add-ons</p>
+              <p class="detail-value"><%= booking.addOns.join(' · ') %></p>
+            </div>
+            <% } %>
+            <div>
+              <p class="detail-label">Submitted</p>
+              <p class="detail-value"><%= new Date(booking.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'long', year:'numeric' }) %></p>
+            </div>
+          </div>
+          <div>
+            <p class="detail-label mb-2">Project brief</p>
+            <p class="detail-value leading-relaxed whitespace-pre-wrap text-gray-300"><%= booking.projectBrief %></p>
+          </div>
+        </div>
+
+        <!-- Uploaded files -->
+        <% if (booking.uploadedFiles && booking.uploadedFiles.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Uploaded files <span class="text-gray-600 font-normal text-sm"><%= booking.uploadedFiles.length %></span></h2>
+          <div class="space-y-4">
+            <% booking.uploadedFiles.forEach(f => {
+              const url = '/associate/uploads/' + f.storedName;
+              const isImage = /^image\//i.test(f.mimetype);
+              const isVideo = /^video\//i.test(f.mimetype);
+              const isAudio = /^audio\//i.test(f.mimetype);
+              const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+            %>
+            <div class="border border-white/5 rounded-md overflow-hidden">
+              <% if (isImage) { %>
+              <a href="<%= url %>" target="_blank"><img src="<%= url %>" alt="<%= f.originalName %>" class="w-full max-h-72 object-contain bg-black/40" /></a>
+              <% } else if (isVideo) { %>
+              <video controls preload="metadata" class="w-full max-h-72 bg-black"><source src="<%= url %>" type="<%= f.mimetype %>"></video>
+              <% } else if (isAudio) { %>
+              <div class="px-3 pt-3"><audio controls class="w-full"><source src="<%= url %>" type="<%= f.mimetype %>"></audio></div>
+              <% } %>
+              <div class="flex items-center justify-between px-3 py-2.5 gap-3">
+                <span class="text-gray-300 text-sm truncate"><%= f.originalName %></span>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="text-gray-600 text-xs"><%= sizeLabel %></span>
+                  <a href="<%= url %>" download="<%= f.originalName %>"
+                    class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap">
+                    Download
+                  </a>
+                </div>
+              </div>
+            </div>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Final deliverables -->
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-1">Final deliverables <span class="text-gray-600 font-normal text-sm"><%= (booking.deliverableFiles || []).length %></span></h2>
+          <p class="text-xs text-gray-600 mb-4">
+            <% if (booking.deliverablesUnlocked) { %>
+            Visible to the client now that the project is marked Completed.
+            <% } else { %>
+            Only downloadable by the client once this project's status is set to <span class="text-gray-400">Completed</span>.
+            <% } %>
+          </p>
+          <% if (booking.deliverableFiles && booking.deliverableFiles.length > 0) { %>
+          <div class="space-y-4 mb-4">
+            <% booking.deliverableFiles.forEach(f => {
+              const url = '/associate/uploads/' + f.storedName;
+              const isImage = /^image\//i.test(f.mimetype);
+              const isVideo = /^video\//i.test(f.mimetype);
+              const isAudio = /^audio\//i.test(f.mimetype);
+              const sizeLabel = f.size < 1024*1024 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1024/1024).toFixed(1)+' MB';
+            %>
+            <div class="border border-white/5 rounded-md overflow-hidden">
+              <% if (isImage) { %>
+              <a href="<%= url %>" target="_blank"><img src="<%= url %>" alt="<%= f.originalName %>" class="w-full max-h-72 object-contain bg-black/40" /></a>
+              <% } else if (isVideo) { %>
+              <video controls preload="metadata" class="w-full max-h-72 bg-black"><source src="<%= url %>" type="<%= f.mimetype %>"></video>
+              <% } else if (isAudio) { %>
+              <div class="px-3 pt-3"><audio controls class="w-full"><source src="<%= url %>" type="<%= f.mimetype %>"></audio></div>
+              <% } %>
+              <div class="flex items-center justify-between px-3 py-2.5 gap-3">
+                <span class="text-gray-300 text-sm truncate"><%= f.originalName %></span>
+                <div class="flex items-center gap-3 shrink-0">
+                  <span class="text-gray-600 text-xs"><%= sizeLabel %></span>
+                  <a href="<%= url %>" download="<%= f.originalName %>"
+                    class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap">
+                    Download
+                  </a>
+                  <form action="/associate/booking/<%= booking._id %>/deliverables/<%= f._id %>/delete" method="POST"
+                    onsubmit="return confirm('Remove this deliverable file?');">
+                    <button type="submit" class="text-xs text-gray-600 hover:text-red-400 transition-colors">Remove</button>
+                  </form>
+                </div>
+              </div>
+            </div>
+            <% }) %>
+          </div>
+          <% } %>
+          <form id="deliverables-form" action="/associate/booking/<%= booking._id %>/deliverables" method="POST" enctype="multipart/form-data">
+            <label id="deliverables-label" for="deliverables-input"
+              class="w-full flex items-center justify-center px-4 py-2.5 rounded-full border border-white/10 text-sm text-gray-300 hover:text-white hover:border-white/25 transition-colors cursor-pointer">
+              Upload final files
+            </label>
+            <input id="deliverables-input" type="file" name="files" multiple class="sr-only" />
+          </form>
+          <script>
+            (function () {
+              var input = document.getElementById('deliverables-input');
+              var label = document.getElementById('deliverables-label');
+              var form = document.getElementById('deliverables-form');
+              input.addEventListener('change', function () {
+                if (!input.files.length) return;
+                label.textContent = 'Uploading ' + input.files.length + ' file' + (input.files.length === 1 ? '' : 's') + '…';
+                label.classList.add('pointer-events-none', 'opacity-60');
+                form.submit();
+              });
+            }());
+          </script>
+        </div>
+
+        <!-- Media links -->
+        <% if (booking.mediaLinks && booking.mediaLinks.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Media links</h2>
+          <div class="space-y-2">
+            <% booking.mediaLinks.forEach(link => { %>
+            <a href="<%= link %>" target="_blank" rel="noopener" class="flex items-center gap-3 text-sm text-amber-400 hover:text-amber-300 transition-colors group">
+              <span class="truncate group-hover:underline"><%= link.replace(/^https?:\/\//, '') %></span>
+            </a>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- External links -->
+        <% if (booking.platforms && booking.platforms.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">External links</h2>
+          <div class="space-y-2">
+            <% const PLATFORM_BASES = { Instagram: 'https://instagram.com/', Twitter: 'https://x.com/', TikTok: 'https://tiktok.com/', OnlyFans: 'https://onlyfans.com/', Fansly: 'https://fansly.com/', Pornhub: 'https://pornhub.com/', MannyVids: 'https://manyvids.com/' }; %>
+            <% booking.platforms.forEach(p => {
+              const isUrl = /^https?:\/\//i.test(p.handle);
+              const bare = p.handle.replace(/^@/, '');
+              const handlePath = p.platform === 'TikTok' ? `@${bare}` : bare;
+              const href = isUrl ? p.handle : (PLATFORM_BASES[p.platform] ? PLATFORM_BASES[p.platform] + handlePath : null);
+            %>
+            <div class="flex items-center gap-2 text-sm">
+              <% if (href) { %>
+              <a href="<%= href %>" target="_blank" rel="noopener" class="flex items-center gap-2 min-w-0 text-amber-400 hover:text-amber-300 transition-colors group">
+                <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+                <span class="truncate group-hover:underline"><%= p.handle %></span>
+              </a>
+              <% } else { %>
+              <span class="flex items-center gap-2 min-w-0 text-gray-300">
+                <span class="shrink-0 px-2 py-0.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-[11px] font-semibold"><%= p.platform %></span>
+                <span class="truncate"><%= p.handle %></span>
+              </span>
+              <% } %>
+            </div>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Revision requests -->
+        <% if (booking.revisions && booking.revisions.length > 0) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">
+            Revision requests
+            <% const pendingRevs = booking.revisions.filter(r => r.status === 'pending'); %>
+            <% if (pendingRevs.length > 0) { %>
+            <span class="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-400 border border-amber-400/25"><%= pendingRevs.length %> pending</span>
+            <% } %>
+          </h2>
+          <div class="space-y-3">
+            <% booking.revisions.forEach(r => { %>
+            <div class="border border-white/5 rounded-md px-3 py-2.5 <%= r.status === 'pending' ? 'border-amber-400/15 bg-amber-400/5' : '' %>">
+              <p class="text-gray-300 text-sm whitespace-pre-wrap mb-2"><%= r.message %></p>
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-gray-600 text-xs"><%= new Date(r.createdAt).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }) %></p>
+                <% if (r.status === 'pending') { %>
+                <form action="/associate/booking/<%= booking._id %>/revision/<%= r._id %>/reviewed" method="POST">
+                  <button type="submit" class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60">
+                    Mark reviewed
+                  </button>
+                </form>
+                <% } else { %>
+                <span class="text-xs text-green-400 font-medium">Reviewed</span>
+                <% } %>
+              </div>
+            </div>
+            <% }) %>
+          </div>
+        </div>
+        <% } %>
+
+        <!-- Messages -->
+        <%- include('_message-thread-panel') %>
+
+      </div>
+
+      <!-- Sidebar -->
+      <div class="space-y-6">
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-5">Contact</h2>
+          <div class="space-y-4">
+            <div>
+              <p class="detail-label">Name</p>
+              <p class="detail-value"><%= booking.name %></p>
+            </div>
+            <div>
+              <p class="detail-label">Email</p>
+              <a href="mailto:<%= booking.email %>" class="detail-value text-amber-400 hover:text-amber-300 transition-colors"><%= booking.email %></a>
+            </div>
+            <div>
+              <p class="detail-label">Location</p>
+              <p class="detail-value"><%= booking.location %></p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Payment -->
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Payment</h2>
+          <% if (stripeError) { %>
+          <div class="mb-4 px-3 py-2.5 rounded-md bg-red-500/10 border border-red-500/25 text-red-400 text-xs"><%= stripeError %></div>
+          <% } %>
+          <% if (booking.agreedPrice) { %>
+          <p class="detail-label mb-1">Agreed price</p>
+          <p class="text-white font-semibold text-lg mb-4">$<%= booking.agreedPrice.toLocaleString('en-US', { minimumFractionDigits: 2 }) %></p>
+          <% } %>
+
+          <% const TIER_PRICES = { Clip: 79, Scene: 189, Feature: 399 };
+             const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
+             const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+             const _minDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          %>
+
+          <% if (booking.depositStatus === 'none') { %>
+          <% const hasVideoUpload = (booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype));
+             const canSendDeposit = (booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress') && hasVideoUpload;
+             const _estimatedTotal = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+          %>
+          <form action="/associate/booking/<%= booking._id %>/send-deposit" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Agreed price (USD)</label>
+              <input type="number" name="agreedPrice" min="1" step="0.01" required placeholder="e.g. 250.00"
+                <% if (_estimatedTotal > 0) { %>value="<%= _estimatedTotal.toFixed(2) %>"<% } %>
+                <% if (!canSendDeposit) { %>disabled<% } %>
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
+            </div>
+            <div>
+              <label class="detail-label block mb-1">Deposit due date</label>
+              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>" min="<%= _minDueDate %>"
+                <% if (!canSendDeposit) { %>disabled<% } %>
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50 disabled:opacity-40 disabled:cursor-not-allowed" />
+            </div>
+            <button type="submit" <% if (!canSendDeposit) { %>disabled<% } %>
+              class="w-full px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-300 disabled:hover:bg-amber-400">
+              Send Deposit Invoice (30%)
+            </button>
+          </form>
+          <% if (!canSendDeposit && !hasVideoUpload) { %>
+          <p class="text-xs text-gray-600 mt-2">Waiting on the client to upload at least one video before invoicing.</p>
+          <% } else if (!canSendDeposit) { %>
+          <p class="text-xs text-gray-600 mt-2">Set status to <span class="text-gray-400">In Review</span> or higher to enable invoicing.</p>
+          <% } %>
+
+          <% } else if (booking.depositStatus === 'pending') { %>
+          <div class="flex items-start gap-2.5 mb-4">
+            <div class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
+            <div>
+              <p class="text-sm text-white font-medium">Deposit invoice sent</p>
+              <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.30).toFixed(2) %>)</p>
+              <% if (booking.depositDueDate) { %>
+              <p class="text-xs text-amber-400 mt-0.5">Due by <%= new Date(booking.depositDueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
+              <% } %>
+            </div>
+          </div>
+          <form action="/associate/booking/<%= booking._id %>/deposit-due-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="dueDate" min="<%= _minDueDate %>"
+              <% if (booking.depositDueDate) { %>value="<%= new Date(booking.depositDueDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit" class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">Update</button>
+          </form>
+
+          <% } else if (booking.depositStatus === 'paid' && booking.finalPaymentStatus === 'none') { %>
+          <div class="flex items-start gap-2.5 mb-4">
+            <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+            <p class="text-sm text-white font-medium">Deposit received — $<%= (booking.agreedPrice * 0.30).toFixed(2) %></p>
+          </div>
+          <form action="/associate/booking/<%= booking._id %>/send-final" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Final due date</label>
+              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>" min="<%= _minDueDate %>"
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            </div>
+            <button type="submit" class="w-full px-4 py-2.5 rounded-full bg-green-500 hover:bg-green-400 text-black text-sm font-semibold transition-colors">
+              Send Final Invoice (70%)
+            </button>
+          </form>
+
+          <% } else if (booking.finalPaymentStatus === 'pending') { %>
+          <div class="space-y-2.5 mb-4">
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <p class="text-sm text-white font-medium">Deposit received — $<%= (booking.agreedPrice * 0.30).toFixed(2) %></p>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-amber-400 mt-1.5 shrink-0"></div>
+              <div>
+                <p class="text-sm text-white font-medium">Final invoice sent</p>
+                <p class="text-xs text-gray-500 mt-0.5">Awaiting client payment ($<%= (booking.agreedPrice * 0.70).toFixed(2) %>)</p>
+              </div>
+            </div>
+          </div>
+          <form action="/associate/booking/<%= booking._id %>/final-due-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="dueDate" min="<%= _minDueDate %>"
+              <% if (booking.finalDueDate) { %>value="<%= new Date(booking.finalDueDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit" class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">Update</button>
+          </form>
+
+          <% } else if (booking.finalPaymentStatus === 'paid') { %>
+          <div class="space-y-2.5">
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <p class="text-sm text-white font-medium">Deposit received — $<%= (booking.agreedPrice * 0.30).toFixed(2) %></p>
+            </div>
+            <div class="flex items-start gap-2.5">
+              <div class="w-2 h-2 rounded-full bg-green-400 mt-1.5 shrink-0"></div>
+              <p class="text-sm text-white font-medium">Final payment received — $<%= (booking.agreedPrice * 0.70).toFixed(2) %></p>
+            </div>
+            <p class="text-xs text-green-400 font-semibold pt-1">All payments received</p>
+          </div>
+          <% } %>
+        </div>
+
+        <% if (booking.stripeCustomerId) { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-1">Revision invoices</h2>
+          <p class="text-xs text-gray-600 mb-4">Bill the client for extra revision work outside what's included.</p>
+          <% if (booking.revisionInvoices && booking.revisionInvoices.length > 0) { %>
+          <div class="space-y-2 mb-4">
+            <% [...booking.revisionInvoices].reverse().forEach(ri => { %>
+            <div class="flex items-center justify-between gap-3 border border-white/5 rounded-md px-3 py-2.5">
+              <div class="flex items-center gap-2.5">
+                <div class="w-2 h-2 rounded-full shrink-0 <%= ri.status === 'paid' ? 'bg-green-400' : ri.status === 'void' ? 'bg-gray-600' : 'bg-amber-400' %>"></div>
+                <div>
+                  <p class="text-sm text-white font-medium">$<%= ri.amount.toFixed(2) %></p>
+                  <p class="text-xs text-gray-500"><%= new Date(ri.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %> · <%= ri.status === 'paid' ? 'Paid' : ri.status === 'void' ? 'Void' : 'Awaiting payment' %></p>
+                </div>
+              </div>
+              <% if (ri.invoiceUrl) { %>
+              <a href="<%= ri.invoiceUrl %>" target="_blank" rel="noopener" class="text-xs font-semibold text-amber-400 hover:text-amber-300 transition-colors px-3 py-1 rounded-full border border-amber-400/30 hover:border-amber-400/60 whitespace-nowrap shrink-0">View</a>
+              <% } %>
+            </div>
+            <% }) %>
+          </div>
+          <% } %>
+          <form action="/associate/booking/<%= booking._id %>/send-revision-invoice" method="POST" class="space-y-3">
+            <div>
+              <label class="detail-label block mb-1">Amount (USD)</label>
+              <input type="number" name="amount" min="1" step="0.01" value="<%= ADDON_PRICES['Extra revision'] %>" required
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            </div>
+            <div>
+              <label class="detail-label block mb-1">Due date</label>
+              <input type="date" name="dueDate" required value="<%= _defaultDueDate %>" min="<%= _minDueDate %>"
+                class="w-full bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            </div>
+            <button type="submit" class="w-full px-4 py-2.5 rounded-full bg-amber-400/15 hover:bg-amber-400/25 text-amber-300 text-sm font-semibold border border-amber-400/30 transition-colors">
+              Send revision invoice
+            </button>
+          </form>
+        </div>
+        <% } %>
+
+        <% if (booking.depositStatus === 'paid') { %>
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-4">Delivery date</h2>
+          <% if (booking.deliveryDate) { %>
+          <p class="text-white font-semibold text-sm mb-3"><%= new Date(booking.deliveryDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) %></p>
+          <% } else { %>
+          <p class="text-xs text-gray-600 mb-3">Not set yet — the client won't see a delivery estimate until you set one.</p>
+          <% } %>
+          <form action="/associate/booking/<%= booking._id %>/delivery-date" method="POST" class="flex items-center gap-2">
+            <input type="date" name="deliveryDate" <% if (booking.deliveryDate) { %>value="<%= new Date(booking.deliveryDate).toISOString().slice(0, 10) %>"<% } %>
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50" />
+            <button type="submit" class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">Save</button>
+          </form>
+        </div>
+        <% } %>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    const priceInput = document.querySelector('input[name="agreedPrice"]');
+    const submitBtn  = priceInput ? priceInput.closest('form').querySelector('button[type="submit"]') : null;
+    if (priceInput && submitBtn) {
+      const check = () => { submitBtn.disabled = priceInput.disabled || !priceInput.value || parseFloat(priceInput.value) <= 0; };
+      priceInput.addEventListener('input', check);
+      check();
+    }
+  </script>
+
+  <%- include('../_toast') %>
+  <% if (locals.delivered) { %>
+  <script>showToast('Files uploaded', '<%= delivered %> file<%= delivered === 1 ? "" : "s" %> uploaded.');</script>
+  <% } %>
+  <% if (locals.deliverError) { %>
+  <script>showToast('Upload failed', <%- JSON.stringify(deliverError) %>, 'error');</script>
+  <% } %>
+</body>
+</html>

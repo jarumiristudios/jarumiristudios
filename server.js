@@ -20,7 +20,10 @@ const AdminNotification = require("./models/AdminNotification");
 const Message = require("./models/Message");
 const LoginAttempt = require("./models/LoginAttempt");
 const PasswordResetToken = require("./models/PasswordResetToken");
-const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
+const Role = require("./models/Role");
+const Application = require("./models/Application");
+const Associate = require("./models/Associate");
+const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAdminNewApplicationAlert, sendAcceptanceEmail, sendAdminInvoiceAlert, sendAdminPaymentAlert, sendAdminPauseAlert, sendAdminUnexpectedPaymentAlert, sendPasswordResetEmail } = require("./lib/mailer");
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 const { fileTypeFromMime, uniqueFilename } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
@@ -242,6 +245,23 @@ const requireClient = (req, res, next) => {
   res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
 };
 
+const requireAssociate = (req, res, next) => {
+  if (req.session.associateId) return next();
+  res.redirect("/associate/login");
+};
+
+// Ownership guard for /associate/booking/:id/* routes — an editor may only act on a project
+// currently assigned to them, regardless of whether they claimed it or the superadmin assigned it.
+async function requireAssignedBooking(req, res, next) {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.archived || booking.assignedTo?.toString() !== req.session.associateId) {
+    return res.redirect("/associate");
+  }
+  req.booking = booking;
+  req.crCode = booking.crCode;
+  next();
+}
+
 function chatRoom(bookingId) {
   return `project:${bookingId}`;
 }
@@ -260,6 +280,8 @@ io.on("connection", async (socket) => {
     authorized = await BookingRequest.exists({ _id: bookingId });
   } else if (session?.userId) {
     authorized = await BookingRequest.exists({ _id: bookingId, clientId: session.userId });
+  } else if (session?.associateId) {
+    authorized = await BookingRequest.exists({ _id: bookingId, assignedTo: session.associateId });
   }
   if (!authorized) return socket.disconnect(true);
 
@@ -408,6 +430,42 @@ async function preCrCode(req, res, next) {
       lastBooking: null,
     });
   }
+}
+
+const APP_CODE_MAX_ATTEMPTS = 10;
+
+async function generateAppCode() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const rand = () => Array.from({ length: 9 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  for (let attempt = 0; attempt < APP_CODE_MAX_ATTEMPTS; attempt++) {
+    const r = rand();
+    const code = `${r.slice(0, 3)}-${r.slice(3, 6)}-${r.slice(6, 9)}`;
+    if (!(await Application.exists({ appCode: code }))) return code;
+  }
+  throw new Error(`Failed to generate a unique application code after ${APP_CODE_MAX_ATTEMPTS} attempts`);
+}
+
+async function preAppCode(req, res, next) {
+  try {
+    req.appCode = await generateAppCode();
+    next();
+  } catch (err) {
+    console.error("preAppCode failed:", err);
+    res.status(500).json({ ok: false, error: "We couldn't process your application right now. Please try again in a moment." });
+  }
+}
+
+const APPLICATION_SUBMISSION_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// One application per rolling 24h per visitor cookie — applicants have no account concept
+// here, so unlike enforceGuestSubmissionQuota this applies regardless of session.userId.
+async function enforceApplicationSubmissionQuota(req, res, next) {
+  const since = new Date(Date.now() - APPLICATION_SUBMISSION_WINDOW_MS);
+  const recent = await Application.exists({ visitorId: req.visitorId, createdAt: { $gte: since } });
+  if (recent) {
+    return res.status(429).json({ ok: false, error: "You've already submitted an application in the last 24 hours. Please check back later." });
+  }
+  next();
 }
 
 const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
@@ -680,6 +738,21 @@ function restrictToAllowedMediaTypes(req, file, cb) {
   });
 }
 
+// Job applications additionally accept PDF (resumes) on top of the video/audio/image/archive
+// allowlist above — a portfolio piece is as likely to be a PDF deck as a video reel.
+const APPLICATION_UPLOAD_MIME_RE = /^(video|audio|image|application\/pdf)/i;
+function restrictToApplicationFileTypes(req, file, cb) {
+  rejectDangerousFiles(req, file, (err) => {
+    if (err) return cb(err);
+    const isMedia = APPLICATION_UPLOAD_MIME_RE.test(file.mimetype);
+    const isArchive = ARCHIVE_UPLOAD_EXT_RE.test(file.originalname) && ARCHIVE_UPLOAD_MIME_RE.test(file.mimetype);
+    if (!isMedia && !isArchive) {
+      return cb(new Error("That file type isn't allowed. Upload video, audio, image, PDF, or .zip/.rar files."));
+    }
+    cb(null, true);
+  });
+}
+
 // All three multer instances below write straight to R2 (see lib/r2MulterStorage.js) instead
 // of local disk — the R2 key is flat (`<crCode>/<storedName>`), so "folder" (video/audio/
 // image/other/deliverables/chat) is decided by each upload-completion handler and stored as
@@ -704,6 +777,15 @@ const chatUpload = multer({
   storage: createR2Storage(),
   limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
+});
+
+// Job application portfolio/work-sample upload — single file, keyed under req.appCode
+// (set by preAppCode) instead of req.crCode since applications aren't bookings.
+const APPLICATION_MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
+const applicationUpload = multer({
+  storage: createR2Storage((req) => req.appCode),
+  limits: { fileSize: APPLICATION_MAX_FILE_SIZE },
+  fileFilter: restrictToApplicationFileTypes,
 });
 
 // Also blocks uploads to an archived booking — its folder lives under uploads/_archive/, not the active path,
@@ -732,6 +814,11 @@ async function attachCrCodeForClient(req, res, next) {
 // Routes
 app.get("/", (req, res) => {
   res.render("index");
+});
+
+app.get("/career", async (req, res) => {
+  const roles = await Role.find({ active: true }).sort({ order: 1, createdAt: 1 });
+  res.render("career", { roles });
 });
 
 app.get("/track", async (req, res) => {
@@ -965,6 +1052,61 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       error: "Something went wrong saving your request. Please try again.",
       formData: req.body,
     });
+  }
+});
+
+app.post("/career/apply", enforceApplicationSubmissionQuota, preAppCode, (req, res, next) => {
+  applicationUpload.single("file")(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === "LIMIT_FILE_SIZE" ? "That file exceeds the 200MB limit." : err.message || "Upload failed.";
+    return res.status(400).json({ ok: false, error: message });
+  });
+}, async (req, res) => {
+  const { name, email, message, roleId } = req.body;
+
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!name || !email || !emailRe.test(email) || !message || message.length > 2000) {
+    return res.status(400).json({ ok: false, error: "Please fill in all required fields." });
+  }
+
+  let role = null;
+  if (roleId) {
+    role = await Role.findOne({ _id: roleId, active: true });
+    if (!role) return res.status(400).json({ ok: false, error: "That role is no longer open." });
+  }
+
+  try {
+    const file = req.file
+      ? {
+          originalName: req.file.originalname,
+          storedName: req.file.filename,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+          folder: fileTypeFromMime(req.file.mimetype),
+          storageKey: req.file.storageKey,
+          backend: req.file.backend,
+          blurDataUrl: await generateBlurDataUrl(req.file.buffer, req.file.mimetype),
+        }
+      : undefined;
+
+    const application = new Application({
+      appCode: req.appCode,
+      visitorId: req.visitorId,
+      roleId: role?._id || null,
+      roleTitle: role?.title || "General Application",
+      name,
+      email,
+      message,
+      file,
+    });
+    await application.save();
+
+    sendAdminNewApplicationAlert(application);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Application save error:", err);
+    res.status(500).json({ ok: false, error: "Something went wrong saving your application. Please try again." });
   }
 });
 
@@ -1483,7 +1625,8 @@ app.get("/admin", requireAdmin, async (req, res) => {
   const bookings = await BookingRequest.find(filter)
     .sort({ createdAt: -1 })
     .skip((page - 1) * ADMIN_PAGE_SIZE)
-    .limit(ADMIN_PAGE_SIZE);
+    .limit(ADMIN_PAGE_SIZE)
+    .populate("assignedTo", "name");
 
   const unreadMessageBookingIds = new Set(
     (await Message.find({ senderRole: "client", read: false }).distinct("bookingId")).map(String)
@@ -1659,9 +1802,11 @@ app.get("/admin/booking/:id", requireAdmin, async (req, res) => {
   const bookingUnreadMessageCount = booking.clientId
     ? await Message.countDocuments({ bookingId: booking._id, senderRole: "client", read: false })
     : 0;
+  const associates = await Associate.find({ active: true }).sort({ name: 1 });
   res.render("admin/booking", {
     booking,
     bookingUnreadMessageCount,
+    associates,
     statusGate: getStatusGate(booking.status),
     statusGateHints: STATUS_GATE_HINTS,
     statusGateTerminalHint: STATUS_GATE_TERMINAL_HINT,
@@ -1969,148 +2114,139 @@ app.post("/admin/booking/:id/notes/:noteId/edit", requireAdmin, async (req, res)
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
-app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
-  const booking = await BookingRequest.findById(req.params.id);
-  if (!booking || booking.depositStatus !== "none") return res.redirect(`/admin/booking/${req.params.id}`);
-
+// Shared Stripe invoice helpers — reused by both the superadmin /admin/booking/:id/* routes
+// and the editor /associate/booking/:id/* routes, since editors can send/reissue invoices for
+// their own assigned projects too. Each throws a user-facing Error on validation/Stripe failure;
+// callers redirect back to their own booking-detail URL with ?error=<message>.
+async function createDepositInvoice(booking, agreedPrice, dueDateStr) {
   // Sending the deposit invoice also flips status to "accepted", which is the same
   // moment the client's dashboard would show the pay link. Require the booking to have
   // already passed through "in-review" so the client had a window to upload files via
   // their dashboard before ever seeing a payment ask — otherwise accept+invoice could
   // fire straight from "pending" with nothing uploaded yet.
   if (!["in-review", "accepted", "in-progress"].includes(booking.status)) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Move status to In Review first so the client can upload files before the deposit invoice goes out.")}`);
+    throw new Error("Move status to In Review first so the client can upload files before the deposit invoice goes out.");
   }
-
   // No deposit ask until the client has actually put footage on the table — otherwise
   // we'd be invoicing against a project that's still just a form submission.
   if (!(booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype))) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("The client hasn't uploaded a video yet — wait for at least one before sending the deposit invoice.")}`);
+    throw new Error("The client hasn't uploaded a video yet — wait for at least one before sending the deposit invoice.");
   }
-
-  const agreedPrice = parseFloat(req.body.agreedPrice);
-  if (!agreedPrice || agreedPrice <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
-
-  const depositDueDate = endOfDay(req.body.dueDate);
+  if (!agreedPrice || agreedPrice <= 0) throw new Error("Enter a valid agreed price.");
+  const depositDueDate = endOfDay(dueDateStr);
   if (!depositDueDate || depositDueDate < minDueDate()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
+    throw new Error(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`);
   }
 
+  const existing = await stripe.customers.list({ email: booking.email, limit: 1 });
+  const customer = existing.data.length
+    ? existing.data[0]
+    : await stripe.customers.create({ email: booking.email, name: booking.name, metadata: { crCode: booking.crCode } });
+
+  const invoice = await stripe.invoices.create({
+    customer: customer.id,
+    collection_method: "send_invoice",
+    due_date: Math.floor(depositDueDate.getTime() / 1000),
+    currency: "usd",
+    metadata: { crCode: booking.crCode },
+  });
+  await stripe.invoiceItems.create({
+    customer: customer.id,
+    invoice: invoice.id,
+    amount: Math.round(agreedPrice * 0.30 * 100),
+    currency: "usd",
+    description: `30% Deposit — Jarumiri Studios (${booking.crCode})`,
+  });
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+  await stripe.invoices.sendInvoice(invoice.id);
+
+  booking.agreedPrice = agreedPrice;
+  booking.stripeCustomerId = customer.id;
+  booking.depositInvoiceId = invoice.id;
+  booking.depositInvoiceUrl = finalized.hosted_invoice_url;
+  booking.depositStatus = "pending";
+  booking.status = "accepted";
+  booking.depositDueDate = depositDueDate;
+  await booking.save();
+
+  sendAcceptanceEmail(booking);
+  sendAdminInvoiceAlert(booking, "deposit", agreedPrice * 0.30, finalized.hosted_invoice_url);
+  if (booking.clientId) {
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "invoice_sent",
+      message: `A deposit invoice ($${(agreedPrice * 0.30).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
+    });
+  }
+}
+
+async function reissueDepositInvoice(booking, dueDateStr) {
+  const depositDueDate = endOfDay(dueDateStr);
+  if (!depositDueDate || depositDueDate < minDueDate()) {
+    throw new Error(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`);
+  }
+  if (booking.depositDueDate && depositDueDate.getTime() === booking.depositDueDate.getTime()) return;
+
+  if (booking.depositInvoiceId) await stripe.invoices.voidInvoice(booking.depositInvoiceId);
+
+  const invoice = await stripe.invoices.create({
+    customer: booking.stripeCustomerId,
+    collection_method: "send_invoice",
+    due_date: Math.floor(depositDueDate.getTime() / 1000),
+    currency: "usd",
+    metadata: { crCode: booking.crCode },
+  });
+  await stripe.invoiceItems.create({
+    customer: booking.stripeCustomerId,
+    invoice: invoice.id,
+    amount: Math.round(booking.agreedPrice * 0.30 * 100),
+    currency: "usd",
+    description: `30% Deposit — Jarumiri Studios (${booking.crCode})`,
+  });
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+  await stripe.invoices.sendInvoice(invoice.id);
+
+  booking.depositInvoiceId = invoice.id;
+  booking.depositInvoiceUrl = finalized.hosted_invoice_url;
+  booking.depositDueDate = depositDueDate;
+  booking.depositReminderSent = false;
+  await booking.save();
+
+  if (booking.clientId) {
+    const dueDateLabel = depositDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "due_date_updated",
+      message: `The deposit due date for project ${booking.crCode} has been moved to ${dueDateLabel}. A fresh payment link has been sent.`,
+    });
+  }
+}
+
+app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
+  const booking = await BookingRequest.findById(req.params.id);
+  if (!booking || booking.depositStatus !== "none") return res.redirect(`/admin/booking/${req.params.id}`);
   try {
-    const existing = await stripe.customers.list({ email: booking.email, limit: 1 });
-    const customer = existing.data.length
-      ? existing.data[0]
-      : await stripe.customers.create({
-          email: booking.email,
-          name: booking.name,
-          metadata: { crCode: booking.crCode },
-        });
-
-    const invoice = await stripe.invoices.create({
-      customer: customer.id,
-      collection_method: "send_invoice",
-      due_date: Math.floor(depositDueDate.getTime() / 1000),
-      currency: "usd",
-      metadata: { crCode: booking.crCode },
-    });
-
-    await stripe.invoiceItems.create({
-      customer: customer.id,
-      invoice: invoice.id,
-      amount: Math.round(agreedPrice * 0.30 * 100),
-      currency: "usd",
-      description: `30% Deposit — Jarumiri Studios (${booking.crCode})`,
-    });
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    booking.agreedPrice = agreedPrice;
-    booking.stripeCustomerId = customer.id;
-    booking.depositInvoiceId = invoice.id;
-    booking.depositInvoiceUrl = finalized.hosted_invoice_url;
-    booking.depositStatus = "pending";
-    booking.status = "accepted";
-    booking.depositDueDate = depositDueDate;
-    await booking.save();
-
-    sendAcceptanceEmail(booking);
-    sendAdminInvoiceAlert(booking, "deposit", agreedPrice * 0.30, finalized.hosted_invoice_url);
-
-    if (booking.clientId) {
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "invoice_sent",
-        message: `A deposit invoice ($${(agreedPrice * 0.30).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
-      });
-    }
+    await createDepositInvoice(booking, parseFloat(req.body.agreedPrice), req.body.dueDate);
   } catch (err) {
     console.error("Stripe deposit invoice error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
-
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
 app.post("/admin/booking/:id/deposit-due-date", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking || booking.depositStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
-
-  const depositDueDate = endOfDay(req.body.dueDate);
-  if (!depositDueDate || depositDueDate < minDueDate()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Deposit due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
-  }
-  if (booking.depositDueDate && depositDueDate.getTime() === booking.depositDueDate.getTime()) {
-    return res.redirect(`/admin/booking/${req.params.id}`);
-  }
-
   try {
-    if (booking.depositInvoiceId) {
-      await stripe.invoices.voidInvoice(booking.depositInvoiceId);
-    }
-
-    const invoice = await stripe.invoices.create({
-      customer: booking.stripeCustomerId,
-      collection_method: "send_invoice",
-      due_date: Math.floor(depositDueDate.getTime() / 1000),
-      currency: "usd",
-      metadata: { crCode: booking.crCode },
-    });
-
-    await stripe.invoiceItems.create({
-      customer: booking.stripeCustomerId,
-      invoice: invoice.id,
-      amount: Math.round(booking.agreedPrice * 0.30 * 100),
-      currency: "usd",
-      description: `30% Deposit — Jarumiri Studios (${booking.crCode})`,
-    });
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    booking.depositInvoiceId = invoice.id;
-    booking.depositInvoiceUrl = finalized.hosted_invoice_url;
-    booking.depositDueDate = depositDueDate;
-    booking.depositReminderSent = false;
-    await booking.save();
-
-    if (booking.clientId) {
-      const dueDateStr = depositDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "due_date_updated",
-        message: `The deposit due date for project ${booking.crCode} has been moved to ${dueDateStr}. A fresh payment link has been sent.`,
-      });
-    }
+    await reissueDepositInvoice(booking, req.body.dueDate);
   } catch (err) {
     console.error("Stripe deposit due-date update error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
-
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
@@ -2128,184 +2264,170 @@ app.post("/admin/booking/:id/delivery-date", requireAdmin, async (req, res) => {
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
+async function createFinalInvoice(booking, dueDateStr) {
+  const finalDueDate = endOfDay(dueDateStr);
+  if (!finalDueDate || finalDueDate < minDueDate()) {
+    throw new Error(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`);
+  }
+
+  const invoice = await stripe.invoices.create({
+    customer: booking.stripeCustomerId,
+    collection_method: "send_invoice",
+    due_date: Math.floor(finalDueDate.getTime() / 1000),
+    currency: "usd",
+    metadata: { crCode: booking.crCode },
+  });
+  await stripe.invoiceItems.create({
+    customer: booking.stripeCustomerId,
+    invoice: invoice.id,
+    amount: Math.round(booking.agreedPrice * 0.70 * 100),
+    currency: "usd",
+    description: `Final Payment — Jarumiri Studios (${booking.crCode})`,
+  });
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+  await stripe.invoices.sendInvoice(invoice.id);
+
+  booking.finalInvoiceId = invoice.id;
+  booking.finalInvoiceUrl = finalized.hosted_invoice_url;
+  booking.finalPaymentStatus = "pending";
+  booking.finalDueDate = finalDueDate;
+  await booking.save();
+
+  sendAdminInvoiceAlert(booking, "final", booking.agreedPrice * 0.70, finalized.hosted_invoice_url);
+  if (booking.clientId) {
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "invoice_sent",
+      message: `A final invoice ($${(booking.agreedPrice * 0.70).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
+    });
+  }
+}
+
+async function reissueFinalInvoice(booking, dueDateStr) {
+  const finalDueDate = endOfDay(dueDateStr);
+  if (!finalDueDate || finalDueDate < minDueDate()) {
+    throw new Error(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`);
+  }
+  if (booking.finalDueDate && finalDueDate.getTime() === booking.finalDueDate.getTime()) return;
+
+  if (booking.finalInvoiceId) await stripe.invoices.voidInvoice(booking.finalInvoiceId);
+
+  const invoice = await stripe.invoices.create({
+    customer: booking.stripeCustomerId,
+    collection_method: "send_invoice",
+    due_date: Math.floor(finalDueDate.getTime() / 1000),
+    currency: "usd",
+    metadata: { crCode: booking.crCode },
+  });
+  await stripe.invoiceItems.create({
+    customer: booking.stripeCustomerId,
+    invoice: invoice.id,
+    amount: Math.round(booking.agreedPrice * 0.70 * 100),
+    currency: "usd",
+    description: `Final Payment — Jarumiri Studios (${booking.crCode})`,
+  });
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+  await stripe.invoices.sendInvoice(invoice.id);
+
+  booking.finalInvoiceId = invoice.id;
+  booking.finalInvoiceUrl = finalized.hosted_invoice_url;
+  booking.finalDueDate = finalDueDate;
+  booking.finalReminderSent = false;
+  await booking.save();
+
+  if (booking.clientId) {
+    const dueDateLabel = finalDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "due_date_updated",
+      message: `The final payment due date for project ${booking.crCode} has been moved to ${dueDateLabel}. A fresh payment link has been sent.`,
+    });
+  }
+}
+
+// Ad-hoc invoice for extra revision work — unlike deposit/final there's no cap, a project can
+// get several of these over its life. Requires stripeCustomerId (set the first time a deposit
+// invoice goes out), since a revision charge only makes sense once work is already underway.
+async function createRevisionInvoice(booking, amount, dueDateStr) {
+  if (!amount || amount <= 0) throw new Error("Enter a valid amount.");
+  const dueDate = endOfDay(dueDateStr);
+  if (!dueDate || dueDate < minDueDate()) {
+    throw new Error(`Due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`);
+  }
+
+  const invoice = await stripe.invoices.create({
+    customer: booking.stripeCustomerId,
+    collection_method: "send_invoice",
+    due_date: Math.floor(dueDate.getTime() / 1000),
+    currency: "usd",
+    metadata: { crCode: booking.crCode },
+  });
+  await stripe.invoiceItems.create({
+    customer: booking.stripeCustomerId,
+    invoice: invoice.id,
+    amount: Math.round(amount * 100),
+    currency: "usd",
+    description: `Revision fee — Jarumiri Studios (${booking.crCode})`,
+  });
+  const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+  await stripe.invoices.sendInvoice(invoice.id);
+
+  booking.revisionInvoices.push({ invoiceId: invoice.id, invoiceUrl: finalized.hosted_invoice_url, amount, dueDate, status: "pending" });
+  await booking.save();
+
+  sendAdminInvoiceAlert(booking, "revision", amount, finalized.hosted_invoice_url);
+  if (booking.clientId) {
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "invoice_sent",
+      message: `A revision invoice ($${amount.toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
+    });
+  }
+}
+
 app.post("/admin/booking/:id/send-final", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking || booking.depositStatus !== "paid" || booking.finalPaymentStatus !== "none") {
     return res.redirect(`/admin/booking/${req.params.id}`);
   }
-
-  const finalDueDate = endOfDay(req.body.dueDate);
-  if (!finalDueDate || finalDueDate < minDueDate()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
-  }
-
   try {
-    const invoice = await stripe.invoices.create({
-      customer: booking.stripeCustomerId,
-      collection_method: "send_invoice",
-      due_date: Math.floor(finalDueDate.getTime() / 1000),
-      currency: "usd",
-      metadata: { crCode: booking.crCode },
-    });
-
-    await stripe.invoiceItems.create({
-      customer: booking.stripeCustomerId,
-      invoice: invoice.id,
-      amount: Math.round(booking.agreedPrice * 0.70 * 100),
-      currency: "usd",
-      description: `Final Payment — Jarumiri Studios (${booking.crCode})`,
-    });
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    booking.finalInvoiceId = invoice.id;
-    booking.finalInvoiceUrl = finalized.hosted_invoice_url;
-    booking.finalPaymentStatus = "pending";
-    booking.finalDueDate = finalDueDate;
-    await booking.save();
-
-    sendAdminInvoiceAlert(booking, "final", booking.agreedPrice * 0.70, finalized.hosted_invoice_url);
-
-    if (booking.clientId) {
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "invoice_sent",
-        message: `A final invoice ($${(booking.agreedPrice * 0.70).toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
-      });
-    }
+    await createFinalInvoice(booking, req.body.dueDate);
   } catch (err) {
     console.error("Stripe final invoice error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
-
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
-// Ad-hoc invoice for extra revision work — unlike deposit/final there's no cap, a project can
-// get several of these over its life. Requires stripeCustomerId (set the first time a deposit
-// invoice goes out), since a revision charge only makes sense once work is already underway.
 app.post("/admin/booking/:id/send-revision-invoice", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking || booking.archived || !booking.stripeCustomerId) {
     return res.redirect(`/admin/booking/${req.params.id}`);
   }
-
-  const amount = parseFloat(req.body.amount) || ADDON_PRICES["Extra revision"];
-  if (amount <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
-
-  const dueDate = endOfDay(req.body.dueDate);
-  if (!dueDate || dueDate < minDueDate()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
-  }
-
   try {
-    const invoice = await stripe.invoices.create({
-      customer: booking.stripeCustomerId,
-      collection_method: "send_invoice",
-      due_date: Math.floor(dueDate.getTime() / 1000),
-      currency: "usd",
-      metadata: { crCode: booking.crCode },
-    });
-
-    await stripe.invoiceItems.create({
-      customer: booking.stripeCustomerId,
-      invoice: invoice.id,
-      amount: Math.round(amount * 100),
-      currency: "usd",
-      description: `Revision fee — Jarumiri Studios (${booking.crCode})`,
-    });
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    booking.revisionInvoices.push({
-      invoiceId: invoice.id,
-      invoiceUrl: finalized.hosted_invoice_url,
-      amount,
-      dueDate,
-      status: "pending",
-    });
-    await booking.save();
-
-    sendAdminInvoiceAlert(booking, "revision", amount, finalized.hosted_invoice_url);
-
-    if (booking.clientId) {
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "invoice_sent",
-        message: `A revision invoice ($${amount.toFixed(2)}) has been sent for project ${booking.crCode}. You can review it and pay anytime from your project page.`,
-      });
-    }
+    await createRevisionInvoice(booking, parseFloat(req.body.amount) || ADDON_PRICES["Extra revision"], req.body.dueDate);
   } catch (err) {
     console.error("Stripe revision invoice error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
-
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
 app.post("/admin/booking/:id/final-due-date", requireAdmin, async (req, res) => {
   const booking = await BookingRequest.findById(req.params.id);
   if (!booking || booking.finalPaymentStatus !== "pending") return res.redirect(`/admin/booking/${req.params.id}`);
-
-  const finalDueDate = endOfDay(req.body.dueDate);
-  if (!finalDueDate || finalDueDate < minDueDate()) {
-    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(`Final due date must be at least ${MIN_DUE_DATE_LEAD_DAYS} days from today.`)}`);
-  }
-  if (booking.finalDueDate && finalDueDate.getTime() === booking.finalDueDate.getTime()) {
-    return res.redirect(`/admin/booking/${req.params.id}`);
-  }
-
   try {
-    if (booking.finalInvoiceId) {
-      await stripe.invoices.voidInvoice(booking.finalInvoiceId);
-    }
-
-    const invoice = await stripe.invoices.create({
-      customer: booking.stripeCustomerId,
-      collection_method: "send_invoice",
-      due_date: Math.floor(finalDueDate.getTime() / 1000),
-      currency: "usd",
-      metadata: { crCode: booking.crCode },
-    });
-
-    await stripe.invoiceItems.create({
-      customer: booking.stripeCustomerId,
-      invoice: invoice.id,
-      amount: Math.round(booking.agreedPrice * 0.70 * 100),
-      currency: "usd",
-      description: `Final Payment — Jarumiri Studios (${booking.crCode})`,
-    });
-
-    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
-    await stripe.invoices.sendInvoice(invoice.id);
-
-    booking.finalInvoiceId = invoice.id;
-    booking.finalInvoiceUrl = finalized.hosted_invoice_url;
-    booking.finalDueDate = finalDueDate;
-    booking.finalReminderSent = false;
-    await booking.save();
-
-    if (booking.clientId) {
-      const dueDateStr = finalDueDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
-      await Notification.create({
-        userId: booking.clientId,
-        bookingId: booking._id,
-        crCode: booking.crCode,
-        type: "due_date_updated",
-        message: `The final payment due date for project ${booking.crCode} has been moved to ${dueDateStr}. A fresh payment link has been sent.`,
-      });
-    }
+    await reissueFinalInvoice(booking, req.body.dueDate);
   } catch (err) {
     console.error("Stripe final due-date update error:", err.message);
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
   }
-
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
@@ -2414,6 +2536,365 @@ app.post("/admin/coupons/:id/toggle", requireAdmin, async (req, res) => {
 app.post("/admin/coupons/:id/delete", requireAdmin, async (req, res) => {
   await Coupon.findByIdAndDelete(req.params.id);
   res.redirect("/admin/coupons");
+});
+
+app.get("/admin/roles", requireAdmin, async (req, res) => {
+  const roles = await Role.find().sort({ order: 1, createdAt: 1 });
+  res.render("admin/roles", { roles });
+});
+
+app.post("/admin/roles", requireAdmin, async (req, res) => {
+  const { title, emoji, description, requirements, order } = req.body;
+  try {
+    await new Role({
+      title,
+      emoji,
+      description,
+      requirements: (requirements || "").split("\n").map((r) => r.trim()).filter(Boolean),
+      order: parseInt(order, 10) || 0,
+    }).save();
+  } catch (err) {
+    console.error("Role create error:", err.message);
+  }
+  res.redirect("/admin/roles");
+});
+
+app.post("/admin/roles/:id/toggle", requireAdmin, async (req, res) => {
+  const role = await Role.findById(req.params.id);
+  if (role) { role.active = !role.active; await role.save(); }
+  res.redirect("/admin/roles");
+});
+
+app.post("/admin/roles/:id/delete", requireAdmin, async (req, res) => {
+  await Role.findByIdAndDelete(req.params.id);
+  res.redirect("/admin/roles");
+});
+
+// ── Associate accounts (superadmin-managed editors) — no delete route: BookingRequest.assignedTo
+// can reference an Associate, so deactivating avoids orphaned refs, same reasoning as Coupons. ──
+app.get("/admin/associates", requireAdmin, async (req, res) => {
+  const associates = await Associate.find().sort({ createdAt: -1 });
+  res.render("admin/associates", { associates });
+});
+
+app.post("/admin/associates", requireAdmin, async (req, res) => {
+  const { name, email, password } = req.body;
+  try {
+    await new Associate({ name, email, password }).save();
+  } catch (err) {
+    console.error("Associate create error:", err.message);
+  }
+  res.redirect("/admin/associates");
+});
+
+app.post("/admin/associates/:id/toggle", requireAdmin, async (req, res) => {
+  const associate = await Associate.findById(req.params.id);
+  if (associate) { associate.active = !associate.active; await associate.save(); }
+  res.redirect("/admin/associates");
+});
+
+app.post("/admin/associates/:id/reset-password", requireAdmin, async (req, res) => {
+  const associate = await Associate.findById(req.params.id);
+  if (associate && req.body.password) {
+    associate.password = req.body.password;
+    await associate.save();
+  }
+  res.redirect("/admin/associates");
+});
+
+// Superadmin can assign/reassign/unassign any booking at any time, independent of whether
+// an editor has already self-claimed it.
+app.post("/admin/booking/:id/assign", requireAdmin, async (req, res) => {
+  await BookingRequest.findByIdAndUpdate(req.params.id, { assignedTo: req.body.associateId || null });
+  res.redirect(`/admin/booking/${req.params.id}`);
+});
+
+// ── Associate auth (separate from both the client account system and the shared-password
+// admin login — individual email+password accounts, created only via /admin/associates) ──
+app.get("/associate/login", (req, res) => {
+  if (req.session.associateId) return res.redirect("/associate");
+  res.render("associate/login");
+});
+
+app.post("/associate/login", async (req, res) => {
+  const { email, password } = req.body;
+  const attemptKey = `associate:${email?.trim().toLowerCase() || ""}`;
+
+  if (await isRateLimited(attemptKey, LOGIN_MAX_ATTEMPTS, LOGIN_ATTEMPT_WINDOW_MS)) {
+    return res.render("associate/login", { error: "Too many failed attempts. Please try again in a few minutes." });
+  }
+
+  const associate = await Associate.findOne({ email: email?.trim().toLowerCase() });
+  if (!associate || !associate.active || !(await associate.verifyPassword(password))) {
+    await LoginAttempt.create({ key: attemptKey });
+    return res.render("associate/login", { error: "Invalid email or password." });
+  }
+  await LoginAttempt.deleteMany({ key: attemptKey });
+  req.session.associateId = associate._id.toString();
+  res.redirect("/associate");
+});
+
+app.get("/associate/logout", (req, res) => {
+  req.session.destroy(() => res.redirect("/associate/login"));
+});
+
+// ── Associate portal ──
+app.get("/associate", requireAssociate, async (req, res) => {
+  const [myProjects, unclaimed] = await Promise.all([
+    BookingRequest.find({ assignedTo: req.session.associateId, archived: false }).sort({ updatedAt: -1 }),
+    BookingRequest.find({ assignedTo: null, archived: false }).sort({ createdAt: -1 }),
+  ]);
+  res.render("associate/dashboard", { myProjects, unclaimed, claimError: req.query.claimError || null });
+});
+
+// Atomic claim — two editors racing the same unclaimed booking only ever lets one through.
+app.post("/associate/booking/:id/claim", requireAssociate, async (req, res) => {
+  const booking = await BookingRequest.findOneAndUpdate(
+    { _id: req.params.id, assignedTo: null, archived: false },
+    { assignedTo: req.session.associateId },
+    { new: true }
+  );
+  if (!booking) return res.redirect(`/associate?claimError=${encodeURIComponent("That project has already been claimed.")}`);
+  res.redirect(`/associate/booking/${booking._id}`);
+});
+
+app.get("/associate/booking/:id", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  const messages = booking.clientId ? await Message.find({ bookingId: booking._id }).sort({ createdAt: 1 }) : [];
+  if (booking.clientId) await Message.updateMany({ bookingId: booking._id, senderRole: "client", read: false }, { read: true });
+  res.render("associate/booking", {
+    booking,
+    messages,
+    statusGate: getStatusGate(booking.status),
+    statusGateHints: STATUS_GATE_HINTS,
+    statusGateTerminalHint: STATUS_GATE_TERMINAL_HINT,
+    statusError: req.query.statusError || null,
+    stripeError: req.query.error || null,
+    deliverError: req.query.deliverError || null,
+    delivered: req.query.delivered ? parseInt(req.query.delivered, 10) : null,
+  });
+});
+
+app.post("/associate/booking/:id/revision/:revId/reviewed", requireAssociate, requireAssignedBooking, async (req, res) => {
+  await BookingRequest.updateOne(
+    { _id: req.params.id, "revisions._id": req.params.revId },
+    { $set: { "revisions.$.status": "reviewed" } }
+  );
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/status", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const existing = req.booking;
+  if (existing.status === req.body.status) return res.redirect(`/associate/booking/${req.params.id}`);
+  if (!BOOKING_STATUSES.includes(req.body.status) || !isStatusChangeAllowed(existing.status, req.body.status)) {
+    return res.redirect(`/associate/booking/${req.params.id}?statusError=${encodeURIComponent("That status change isn't allowed yet.")}`);
+  }
+  const booking = await BookingRequest.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
+  if (booking) await notifyStatusChange([booking], req.body.status);
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/deliverables", requireAssociate, requireAssignedBooking, (req, res, next) => {
+  deliverableUpload.array("files", 20)(req, res, (err) => {
+    if (!err) return next();
+    const message = err.code === "LIMIT_FILE_SIZE" ? "One or more files exceed the 250MB limit."
+      : err.code === "LIMIT_UNEXPECTED_FILE" ? "You can upload up to 20 files at a time."
+      : err.message || "Upload failed.";
+    res.redirect(`/associate/booking/${req.params.id}?deliverError=${encodeURIComponent(message)}`);
+  });
+}, async (req, res) => {
+  const newFiles = await Promise.all((req.files || []).map(async (f) => ({
+    originalName: f.originalname,
+    storedName: f.filename,
+    size: f.size,
+    mimetype: f.mimetype,
+    folder: "deliverables",
+    storageKey: f.storageKey,
+    backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
+  })));
+  if (newFiles.length === 0) {
+    return res.redirect(`/associate/booking/${req.params.id}?deliverError=${encodeURIComponent("No files were selected.")}`);
+  }
+  const booking = await BookingRequest.findByIdAndUpdate(
+    req.params.id,
+    { $push: { deliverableFiles: { $each: newFiles } } },
+    { new: true }
+  );
+  if (booking && booking.clientId && booking.status === "completed") {
+    await Notification.create({
+      userId: booking.clientId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "deliverable_ready",
+      message: `Your final files are ready to download for project ${booking.crCode}.`,
+    });
+  }
+  res.redirect(`/associate/booking/${req.params.id}?delivered=${newFiles.length}`);
+});
+
+app.post("/associate/booking/:id/deliverables/:fileId/delete", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  const file = booking.deliverableFiles.id(req.params.fileId);
+  if (file) {
+    if (file.backend === "r2") {
+      await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
+    } else {
+      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+    }
+    booking.deliverableFiles.pull(req.params.fileId);
+    await booking.save();
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/deposit-due-date", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (booking.depositStatus !== "pending") return res.redirect(`/associate/booking/${req.params.id}`);
+  try {
+    await reissueDepositInvoice(booking, req.body.dueDate);
+  } catch (err) {
+    console.error("Stripe deposit due-date update error:", err.message);
+    return res.redirect(`/associate/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/delivery-date", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (booking.depositStatus !== "paid") return res.redirect(`/associate/booking/${req.params.id}`);
+  if (req.body.deliveryDate) {
+    const parsed = new Date(`${req.body.deliveryDate}T00:00:00`);
+    if (!isNaN(parsed.getTime())) booking.deliveryDate = parsed;
+  } else {
+    booking.deliveryDate = null;
+  }
+  await booking.save();
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/final-due-date", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (booking.finalPaymentStatus !== "pending") return res.redirect(`/associate/booking/${req.params.id}`);
+  try {
+    await reissueFinalInvoice(booking, req.body.dueDate);
+  } catch (err) {
+    console.error("Stripe final due-date update error:", err.message);
+    return res.redirect(`/associate/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/send-deposit", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (booking.depositStatus !== "none") return res.redirect(`/associate/booking/${req.params.id}`);
+  try {
+    await createDepositInvoice(booking, parseFloat(req.body.agreedPrice), req.body.dueDate);
+  } catch (err) {
+    console.error("Stripe deposit invoice error:", err.message);
+    return res.redirect(`/associate/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/send-final", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (booking.depositStatus !== "paid" || booking.finalPaymentStatus !== "none") return res.redirect(`/associate/booking/${req.params.id}`);
+  try {
+    await createFinalInvoice(booking, req.body.dueDate);
+  } catch (err) {
+    console.error("Stripe final invoice error:", err.message);
+    return res.redirect(`/associate/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/send-revision-invoice", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const booking = req.booking;
+  if (!booking.stripeCustomerId) return res.redirect(`/associate/booking/${req.params.id}`);
+  try {
+    await createRevisionInvoice(booking, parseFloat(req.body.amount) || ADDON_PRICES["Extra revision"], req.body.dueDate);
+  } catch (err) {
+    console.error("Stripe revision invoice error:", err.message);
+    return res.redirect(`/associate/booking/${req.params.id}?error=${encodeURIComponent(err.message)}`);
+  }
+  res.redirect(`/associate/booking/${req.params.id}`);
+});
+
+app.post("/associate/booking/:id/messages", requireAssociate, requireAssignedBooking, (req, res, next) => {
+  chatUpload.array("attachments", CHAT_MAX_ATTACHMENTS)(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
+  const booking = req.booking;
+  if (!booking.clientId) return res.status(400).json({ error: "This project has no linked client account." });
+  if (!booking.chatUnlocked) return res.status(403).json({ error: "This project hasn't been accepted yet." });
+  if (booking.chatBlocked) return res.status(403).json({ error: "Unblock this client to send a message." });
+
+  const body = (req.body.body || "").trim();
+  const attachments = await Promise.all((req.files || []).map(async (f) => ({
+    originalName: f.originalname, storedName: f.filename, size: f.size, mimetype: f.mimetype, folder: "chat",
+    storageKey: f.storageKey, backend: f.backend,
+    blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
+  })));
+  const tagged = resolveTaggedAttachments(booking, req.body.taggedFiles, false);
+  if (tagged === null) return res.status(400).json({ error: "One of those files couldn't be found." });
+  attachments.push(...tagged);
+
+  if (!body && attachments.length === 0) return res.status(400).json({ error: "Message can't be empty." });
+
+  const message = await Message.create({
+    bookingId: req.params.id,
+    crCode: booking.crCode,
+    clientId: booking.clientId,
+    senderRole: "admin",
+    body,
+    attachments,
+  });
+
+  const payload = message.toObject();
+  payload.chatBlocked = booking.chatBlocked;
+  io.to(chatRoom(req.params.id)).emit("new-message", payload);
+  res.json({ message });
+});
+
+app.post("/associate/booking/:id/messages/:messageId/delete", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: req.params.id, senderRole: "admin" });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  await softDeleteMessage(message);
+  io.to(chatRoom(req.params.id)).emit("message-deleted", { messageId: message._id, bookingId: req.params.id });
+  res.json({ ok: true });
+});
+
+app.get("/associate/messages/attachments/:filename", requireAssociate, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const message = await Message.findOne({ $or: [{ "attachments.storedName": filename }, { "attachment.storedName": filename }] });
+  if (!message) return res.sendStatus(404);
+  const booking = await BookingRequest.findOne({ _id: message.bookingId, assignedTo: req.session.associateId });
+  if (!booking) return res.sendStatus(404);
+  const att = messageAttachments(message).find((a) => a.storedName === filename);
+  if (!att) return res.sendStatus(404);
+  if (message.senderRole !== "admin" && !att.downloaded) {
+    att.downloaded = true;
+    await message.save();
+  }
+  if (await redirectToStoredFile(res, message.crCode, att.folder || "chat", filename, att)) return;
+  res.sendStatus(404);
+});
+
+app.get("/associate/uploads/:filename", requireAssociate, async (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const booking = await BookingRequest.findOne({
+    assignedTo: req.session.associateId,
+    $or: [{ "uploadedFiles.storedName": filename }, { "deliverableFiles.storedName": filename }],
+  });
+  if (!booking) return res.sendStatus(404);
+  const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
+  const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
+  const folder = fileDoc.folder || (uploadedMatch ? fileTypeFromMime(fileDoc.mimetype) : "deliverables");
+  if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
+  res.sendStatus(404);
 });
 
 app.get("/dashboard/notifications", requireClient, async (req, res) => {

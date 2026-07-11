@@ -481,6 +481,24 @@
           </div>
         </div>
 
+        <!-- Assigned editor -->
+        <div class="card">
+          <h2 class="text-base font-semibold text-white mb-3">Assigned editor</h2>
+          <form action="/admin/booking/<%= booking._id %>/assign" method="POST" class="flex items-center gap-2">
+            <select name="associateId"
+              class="flex-1 bg-white/5 border border-white/10 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-400/50">
+              <option value="">Unassigned</option>
+              <% associates.forEach(a => { %>
+              <option value="<%= a._id %>" <%= booking.assignedTo && booking.assignedTo.toString() === a._id.toString() ? 'selected' : '' %>><%= a.name %></option>
+              <% }) %>
+            </select>
+            <button type="submit"
+              class="px-3 py-2 rounded-md border border-white/10 text-xs text-gray-400 hover:text-white hover:border-white/25 transition-colors shrink-0">
+              Save
+            </button>
+          </form>
+        </div>
+
         <!-- Payment -->
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-4">Payment</h2>
