@@ -333,7 +333,7 @@
         <input type="hidden" name="name"           value="<%= user.name %>" />
         <input type="hidden" name="email"          value="<%= user.email %>" />
         <input type="hidden" name="location"       value="<%= user.location %>" />
-        <input type="hidden" name="clientType"     value="<%= user.clientType %>" />
+        <input type="hidden" id="clientType" name="clientType" value="<%= user.clientType %>" />
 
         <!-- ── Step 1: Project Details ── -->
         <div class="step-panel active" id="step-1">
@@ -917,12 +917,17 @@
     const MAX_SIZE  = 250 * 1024 * 1024;
     let selectedFiles = [];
 
-    dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault(); dropZone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+    // drop-zone/file-input/file-list only render when canUploadNow is true (first-time
+    // clients can't upload until their first request is approved) — skip wiring them up
+    // when they're absent instead of throwing and aborting the rest of this script.
+    if (dropZone) {
+      dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+      dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+      dropZone.addEventListener('drop', e => {
+        e.preventDefault(); dropZone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
+      });
+      fileInput.addEventListener('change', () => addFiles(fileInput.files));
+    }
 
     function addFiles(incoming) {
       const errEl = document.getElementById('err-files');

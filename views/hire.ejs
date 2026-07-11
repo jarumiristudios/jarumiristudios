@@ -374,7 +374,7 @@
         <input type="hidden" name="name"           value="<%= locals.lastBooking.name %>" />
         <input type="hidden" name="email"          value="<%= locals.loggedInUser.email %>" />
         <input type="hidden" name="location"       value="<%= locals.lastBooking.location %>" />
-        <input type="hidden" name="clientType"     value="<%= accountClientType %>" />
+        <input type="hidden" id="clientType" name="clientType" value="<%= accountClientType %>" />
         <% accountPlatforms.forEach(p => { %>
         <input type="hidden" name="platformNames"   value="<%= p.platform %>" />
         <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
@@ -924,6 +924,7 @@
     function updateBriefCount() {
       const brief = document.getElementById('projectBrief');
       const count = document.getElementById('brief-count');
+      if (!brief || !count) return;
       const len = brief.value.length;
       count.textContent = `${len} / ${BRIEF_MAX}`;
       count.className = 'text-xs ' + (len >= BRIEF_MAX ? 'text-red-400' : len >= BRIEF_MAX * 0.9 ? 'text-amber-400' : 'text-gray-500');
@@ -1316,7 +1317,9 @@
     const MAX_COUPONS = 3;
 
     function couponsEnabled() {
-      const tier = document.getElementById('pricingTier').value;
+      const tierEl = document.getElementById('pricingTier');
+      if (!tierEl) return false;
+      const tier = tierEl.value;
       return (tier && tier !== 'Custom') || selectedAddons.length > 0;
     }
 
@@ -1368,6 +1371,7 @@
       const input     = document.getElementById('coupon-input');
       const btn       = document.getElementById('coupon-apply-btn');
       const hint      = document.getElementById('coupon-disabled-hint');
+      if (!section) return;
 
       const enabled = couponsEnabled();
       if (!enabled && appliedCoupons.length > 0) appliedCoupons = [];
