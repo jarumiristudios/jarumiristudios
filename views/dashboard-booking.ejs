@@ -587,7 +587,8 @@
           <% } %>
         </div>
         <% if (booking.depositStatus === 'pending' && booking.depositInvoiceUrl) { %>
-        <a href="<%= booking.depositInvoiceUrl %>" target="_blank" rel="noopener"
+        <a href="<%= booking.depositInvoiceUrl %>" target="_blank" rel="noopener" id="pay-deposit-link"
+          data-has-video="<%= (booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype)) ? 'true' : 'false' %>"
           class="block text-center px-4 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
           Pay deposit now<% if (booking.agreedPrice) { %> — $<%= (booking.agreedPrice * 0.30).toFixed(2) %><% } %>
         </a>
@@ -850,6 +851,16 @@
 
       uploadOne(0);
     }
+
+    (function () {
+      var payDepositLink = document.getElementById('pay-deposit-link');
+      if (payDepositLink && payDepositLink.dataset.hasVideo !== 'true') {
+        payDepositLink.addEventListener('click', function (e) {
+          e.preventDefault();
+          showToast('Video required', 'Upload at least one video file before paying the deposit.', 'error');
+        });
+      }
+    }());
 
     function nudgeAdmin(id, code) {
       fetch(`/dashboard/booking/${id}/nudge`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
