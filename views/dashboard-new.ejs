@@ -200,15 +200,102 @@
           </div>
         </div>
 
-        <form action="/dashboard/account/profile?next=/dashboard/new" method="POST" novalidate class="space-y-4">
+        <form id="gate-form" action="/dashboard/account/profile?next=/dashboard/new" method="POST" novalidate class="space-y-4">
+          <input type="hidden" name="platformsSubmitted" value="1" />
           <div>
             <label class="form-label" for="profile-name">Full name <span class="text-amber-400">*</span></label>
-            <input class="form-input" type="text" id="profile-name" name="name" placeholder="Your name" autocomplete="name" required />
+            <input class="form-input" type="text" id="profile-name" name="name" placeholder="Your name" autocomplete="name" value="<%= user.name || '' %>" required />
           </div>
           <div>
             <label class="form-label" for="profile-location">Location <span class="text-amber-400">*</span></label>
-            <input class="form-input" type="text" id="profile-location" name="location" placeholder="City, Country" autocomplete="country-name" required />
+            <input class="form-input" type="text" id="profile-location" name="location" placeholder="City, Country" autocomplete="country-name" value="<%= user.location || '' %>" required />
           </div>
+
+          <!-- Client type custom dropdown — saved to the account, never asked again -->
+          <div>
+            <label class="form-label">You are a(n) <span class="text-amber-400">*</span></label>
+            <input type="hidden" id="clientType" name="clientType" value="<%= user.clientType || '' %>" />
+            <div class="custom-select" id="cs-clientType">
+              <button type="button" class="custom-select-trigger <%= user.clientType ? 'selected' : '' %>" id="cs-clientType-trigger" onclick="toggleDropdown('cs-clientType')" aria-haspopup="listbox" aria-expanded="false">
+                <span id="cs-clientType-label"><%= user.clientType || 'Select an option' %></span>
+                <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
+              </button>
+              <div class="custom-select-menu" id="cs-clientType-menu" role="listbox">
+                <div class="custom-select-option <%= user.clientType === 'Independent Creator' ? 'active' : '' %>" onclick="selectClientType('Independent Creator')" role="option" data-value="Independent Creator">
+                  <p class="opt-label">Independent Creator</p>
+                  <p class="opt-desc">Solo creator or freelancer making your own content</p>
+                </div>
+                <div class="custom-select-option <%= user.clientType === 'Agency' ? 'active' : '' %>" onclick="selectClientType('Agency')" role="option" data-value="Agency">
+                  <p class="opt-label">Agency</p>
+                  <p class="opt-desc">Managing this project on behalf of a client</p>
+                </div>
+                <div class="custom-select-option <%= user.clientType === 'Studio' ? 'active' : '' %>" onclick="selectClientType('Studio')" role="option" data-value="Studio">
+                  <p class="opt-label">Studio</p>
+                  <p class="opt-desc">In-house production team or post-production house</p>
+                </div>
+                <div class="custom-select-option <%= user.clientType === 'Brand / Business' ? 'active' : '' %>" onclick="selectClientType('Brand / Business')" role="option" data-value="Brand / Business">
+                  <p class="opt-label">Brand / Business</p>
+                  <p class="opt-desc">Company producing content for your own brand</p>
+                </div>
+                <div class="custom-select-option <%= user.clientType === 'Other' ? 'active' : '' %>" onclick="selectClientType('Other')" role="option" data-value="Other">
+                  <p class="opt-label">Other</p>
+                  <p class="opt-desc">Something else — tell us in your project brief</p>
+                </div>
+              </div>
+            </div>
+            <p class="field-error hidden" id="err-clientType">Please select an option.</p>
+          </div>
+
+          <!-- External links (platform + handle) — saved to the account, never asked again -->
+          <div>
+            <label class="form-label">External links <span class="text-amber-400">*</span> <span class="text-gray-500 font-normal">(1–3 links)</span></label>
+            <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
+            <div id="platform-hidden-inputs"></div>
+            <div class="flex gap-2">
+              <input type="hidden" id="platform-select" value="Instagram" />
+              <div class="custom-select w-36 shrink-0" id="cs-platform">
+                <button type="button" class="custom-select-trigger" id="cs-platform-trigger" onclick="toggleDropdown('cs-platform')" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="cs-platform-label">Instagram</span>
+                  <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
+                </button>
+                <div class="custom-select-menu" id="cs-platform-menu" role="listbox">
+                  <div class="custom-select-option active" onclick="selectPlatformOption('Instagram')" role="option" data-value="Instagram">
+                    <p class="opt-label">Instagram</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('Twitter')" role="option" data-value="Twitter">
+                    <p class="opt-label">Twitter</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('TikTok')" role="option" data-value="TikTok">
+                    <p class="opt-label">TikTok</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('OnlyFans')" role="option" data-value="OnlyFans">
+                    <p class="opt-label">OnlyFans</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('Fansly')" role="option" data-value="Fansly">
+                    <p class="opt-label">Fansly</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('Fanview')" role="option" data-value="Fanview">
+                    <p class="opt-label">Fanview</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('MannyVids')" role="option" data-value="MannyVids">
+                    <p class="opt-label">MannyVids</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('Pornhub')" role="option" data-value="Pornhub">
+                    <p class="opt-label">Pornhub</p>
+                  </div>
+                  <div class="custom-select-option" onclick="selectPlatformOption('Other')" role="option" data-value="Other">
+                    <p class="opt-label">Other</p>
+                  </div>
+                </div>
+              </div>
+              <input class="form-input" type="text" id="platform-handle-input" placeholder="@handle or profile URL" />
+              <button type="button" id="platform-add-btn" onclick="addPlatformEntry()" aria-label="Add link" class="shrink-0 w-11 rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center">
+                <iconify-icon icon="material-symbols-light:check" width="18" height="18"></iconify-icon>
+              </button>
+            </div>
+            <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
+          </div>
+
           <div class="pt-2">
             <button type="submit"
               class="px-6 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors">
@@ -246,99 +333,29 @@
         <input type="hidden" name="name"           value="<%= user.name %>" />
         <input type="hidden" name="email"          value="<%= user.email %>" />
         <input type="hidden" name="location"       value="<%= user.location %>" />
-        <% if (locals.lastBooking && locals.lastBooking.clientType) { %>
-        <input type="hidden" id="clientType" name="clientType" value="<%= lastBooking.clientType %>" />
-        <% } %>
+        <input type="hidden" name="clientType"     value="<%= user.clientType %>" />
 
         <!-- ── Step 1: Project Details ── -->
         <div class="step-panel active" id="step-1">
           <div class="space-y-5">
 
-            <% if (!(locals.lastBooking && locals.lastBooking.clientType)) { %>
-            <!-- Client type custom dropdown -->
+            <!-- You are a(n) — locked to the account, edited from Account settings -->
             <div>
-              <label class="form-label">You are a(n) <span class="text-amber-400">*</span></label>
-              <input type="hidden" id="clientType" name="clientType" value="" />
-              <div class="custom-select" id="cs-clientType">
-                <button type="button" class="custom-select-trigger" id="cs-clientType-trigger" onclick="toggleDropdown('cs-clientType')" aria-haspopup="listbox" aria-expanded="false">
-                  <span id="cs-clientType-label">Select an option</span>
-                  <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
-                </button>
-                <div class="custom-select-menu" id="cs-clientType-menu" role="listbox">
-                  <div class="custom-select-option" onclick="selectClientType('Independent Creator')" role="option" data-value="Independent Creator">
-                    <p class="opt-label">Independent Creator</p>
-                    <p class="opt-desc">Solo creator or freelancer making your own content</p>
-                  </div>
-                  <div class="custom-select-option" onclick="selectClientType('Agency')" role="option" data-value="Agency">
-                    <p class="opt-label">Agency</p>
-                    <p class="opt-desc">Managing this project on behalf of a client</p>
-                  </div>
-                  <div class="custom-select-option" onclick="selectClientType('Studio')" role="option" data-value="Studio">
-                    <p class="opt-label">Studio</p>
-                    <p class="opt-desc">In-house production team or post-production house</p>
-                  </div>
-                  <div class="custom-select-option" onclick="selectClientType('Brand / Business')" role="option" data-value="Brand / Business">
-                    <p class="opt-label">Brand / Business</p>
-                    <p class="opt-desc">Company producing content for your own brand</p>
-                  </div>
-                  <div class="custom-select-option" onclick="selectClientType('Other')" role="option" data-value="Other">
-                    <p class="opt-label">Other</p>
-                    <p class="opt-desc">Something else — tell us in your project brief</p>
-                  </div>
-                </div>
-              </div>
-              <p class="field-error hidden" id="err-clientType">Please select an option.</p>
+              <label class="form-label">You are a(n)</label>
+              <p class="text-sm text-white"><%= user.clientType %></p>
             </div>
-            <% } %>
 
-            <!-- External links (platform + handle) -->
+            <!-- External links — locked to the account, edited from Account settings -->
             <div>
-              <label class="form-label">External links <span class="text-amber-400">*</span> <span class="text-gray-500 font-normal">(1–3 links)</span></label>
-              <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
-              <div id="platform-hidden-inputs"></div>
-              <div class="flex gap-2">
-                <input type="hidden" id="platform-select" value="Instagram" />
-                <div class="custom-select w-36 shrink-0" id="cs-platform">
-                  <button type="button" class="custom-select-trigger" id="cs-platform-trigger" onclick="toggleDropdown('cs-platform')" aria-haspopup="listbox" aria-expanded="false">
-                    <span id="cs-platform-label">Instagram</span>
-                    <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
-                  </button>
-                  <div class="custom-select-menu" id="cs-platform-menu" role="listbox">
-                    <div class="custom-select-option active" onclick="selectPlatformOption('Instagram')" role="option" data-value="Instagram">
-                      <p class="opt-label">Instagram</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('Twitter')" role="option" data-value="Twitter">
-                      <p class="opt-label">Twitter</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('TikTok')" role="option" data-value="TikTok">
-                      <p class="opt-label">TikTok</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('OnlyFans')" role="option" data-value="OnlyFans">
-                      <p class="opt-label">OnlyFans</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('Fansly')" role="option" data-value="Fansly">
-                      <p class="opt-label">Fansly</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('Fanview')" role="option" data-value="Fanview">
-                      <p class="opt-label">Fanview</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('MannyVids')" role="option" data-value="MannyVids">
-                      <p class="opt-label">MannyVids</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('Pornhub')" role="option" data-value="Pornhub">
-                      <p class="opt-label">Pornhub</p>
-                    </div>
-                    <div class="custom-select-option" onclick="selectPlatformOption('Other')" role="option" data-value="Other">
-                      <p class="opt-label">Other</p>
-                    </div>
-                  </div>
-                </div>
-                <input class="form-input" type="text" id="platform-handle-input" placeholder="@handle or profile URL" />
-                <button type="button" id="platform-add-btn" onclick="addPlatformEntry()" aria-label="Add link" class="shrink-0 w-11 rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center">
-                  <iconify-icon icon="material-symbols-light:check" width="18" height="18"></iconify-icon>
-                </button>
+              <label class="form-label">External links</label>
+              <div class="flex flex-wrap gap-2">
+                <% (user.platforms || []).forEach(p => { %>
+                <input type="hidden" name="platformNames" value="<%= p.platform %>" />
+                <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
+                <span class="inline-flex items-center pl-3 pr-3 py-1.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-xs font-semibold text-amber-400"><%= p.platform %> | <%= p.handle %></span>
+                <% }) %>
               </div>
-              <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
+              <a href="/dashboard/account" class="inline-block mt-2 text-xs text-gray-500 hover:text-gray-300 transition-colors">Edit in account settings →</a>
             </div>
 
             <!-- Package -->
@@ -592,208 +609,10 @@
   </div>
 
   <script>
-    // Only run form logic when the booking form is present (profile complete)
-    if (document.getElementById('booking-form')) {
-    // Some browsers restore stale form field values (including hidden inputs like
-    // pricingTier) on a manual reload. Reset to the parsed HTML's defaults so that
-    // can't desync from what's actually shown on screen.
-    document.getElementById('booking-form').reset();
-
-    let currentStep = 1;
-
-    function goToStep(next) {
-      if (next > currentStep && !validateStep(currentStep)) return;
-
-      document.getElementById(`step-${currentStep}`).classList.remove('active');
-      document.getElementById(`dot-${currentStep}`).className = next > currentStep ? 'step-dot done' : 'step-dot inactive';
-
-      currentStep = next;
-
-      document.getElementById(`step-${currentStep}`).classList.add('active');
-      document.getElementById(`dot-${currentStep}`).className = 'step-dot active';
-
-      const line = document.getElementById('line-1');
-      if (line) line.className = currentStep > 1 ? 'step-line done' : 'step-line';
-
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-
-    function validateStep(step) {
-      let ok = true;
-      if (step === 1) {
-        const tier       = document.getElementById('pricingTier').value;
-        const brief      = document.getElementById('projectBrief');
-        const clientType = document.getElementById('clientType');
-
-        const svcTrigger        = document.getElementById('cs-service-trigger');
-        const tierTrigger       = document.getElementById('cs-tier-trigger');
-        const clientTypeTrigger = document.getElementById('cs-clientType-trigger');
-
-        if (clientTypeTrigger) {
-          if (!clientType.value) {
-            clientTypeTrigger.classList.add('error');
-            document.getElementById('err-clientType').classList.remove('hidden');
-          } else {
-            clientTypeTrigger.classList.remove('error');
-            document.getElementById('err-clientType').classList.add('hidden');
-          }
-        }
-        if (!clientType.value) ok = false;
-
-        const platformErr = document.getElementById('err-platform');
-        if (!platformEntries.length) {
-          platformErr.textContent = 'Please add at least one external link.';
-          platformErr.classList.remove('hidden');
-          ok = false;
-        } else if (platformErr.textContent === 'Please add at least one external link.') {
-          platformErr.classList.add('hidden');
-        }
-
-        if (!selectedServices.length) {
-          svcTrigger.classList.add('error');
-          document.getElementById('err-service').classList.remove('hidden');
-          ok = false;
-        } else {
-          svcTrigger.classList.remove('error');
-          document.getElementById('err-service').classList.add('hidden');
-        }
-
-        if (!tier) {
-          tierTrigger.classList.add('error');
-          document.getElementById('err-tier').classList.remove('hidden');
-          ok = false;
-        } else {
-          tierTrigger.classList.remove('error');
-          document.getElementById('err-tier').classList.add('hidden');
-        }
-
-        if (tier === 'Custom') {
-          const budget = document.getElementById('budget');
-          if (!budget.value.trim()) {
-            budget.classList.add('error');
-            document.getElementById('err-budget').classList.remove('hidden');
-            ok = false;
-          } else {
-            budget.classList.remove('error');
-            document.getElementById('err-budget').classList.add('hidden');
-          }
-        }
-
-        if (!brief.value.trim()) {
-          brief.classList.add('error');
-          document.getElementById('err-brief').classList.remove('hidden');
-          ok = false;
-        } else {
-          brief.classList.remove('error');
-          document.getElementById('err-brief').classList.add('hidden');
-        }
-
-        const couponInput  = document.getElementById('coupon-input');
-        const couponMsg    = document.getElementById('coupon-msg');
-        if (couponInput?.value.trim()) {
-          couponMsg.className = 'text-xs mt-2 text-amber-400';
-          couponMsg.textContent = 'Click Apply to validate your coupon before continuing.';
-          ok = false;
-        }
-      }
-      return ok;
-    }
-
-    // ── File upload ──
-    const dropZone  = document.getElementById('drop-zone');
-    const fileInput = document.getElementById('file-input');
-    const fileList  = document.getElementById('file-list');
-    const MAX_SIZE  = 250 * 1024 * 1024;
-    let selectedFiles = [];
-
-    dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
-      e.preventDefault(); dropZone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
-    });
-    fileInput.addEventListener('change', () => addFiles(fileInput.files));
-
-    function addFiles(incoming) {
-      const errEl = document.getElementById('err-files');
-      errEl.classList.add('hidden');
-      let tooLarge = [];
-      Array.from(incoming).forEach(f => {
-        if (f.size > MAX_SIZE) { tooLarge.push(f.name); return; }
-        if (!selectedFiles.find(x => x.name === f.name && x.size === f.size)) selectedFiles.push(f);
-      });
-      if (tooLarge.length) {
-        errEl.textContent = `File(s) exceed 250 MB: ${tooLarge.join(', ')}`;
-        errEl.classList.remove('hidden');
-      }
-      rebuildFileInput(); renderFileList();
-    }
-
-    function removeFile(idx) { selectedFiles.splice(idx, 1); rebuildFileInput(); renderFileList(); }
-
-    function rebuildFileInput() {
-      const dt = new DataTransfer();
-      selectedFiles.forEach(f => dt.items.add(f));
-      fileInput.files = dt.files;
-    }
-
-    function renderFileList() {
-      fileList.innerHTML = '';
-      selectedFiles.forEach((f, i) => {
-        const size = f.size < 1048576 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1048576).toFixed(1)+' MB';
-        fileList.innerHTML += `
-          <div class="file-item">
-            <div class="flex items-center gap-3 min-w-0">
-              <iconify-icon icon="material-symbols-light:attach-file" width="16" height="16" style="color:#f59e0b;flex-shrink:0;"></iconify-icon>
-              <span class="text-gray-300 truncate">${f.name}</span>
-            </div>
-            <div class="flex items-center gap-4 flex-shrink-0 ml-4">
-              <span class="text-gray-500 text-xs">${size}</span>
-              <button type="button" onclick="removeFile(${i})" class="text-gray-500 hover:text-red-400 transition-colors text-lg leading-none">×</button>
-            </div>
-          </div>`;
-      });
-    }
-
-    // ── Media links ──
-    let mediaLinks = [];
-
-    function addLink() {
-      const input = document.getElementById('link-input');
-      const errEl = document.getElementById('err-link');
-      const url   = input.value.trim();
-      try { new URL(url); } catch { errEl.classList.remove('hidden'); return; }
-      errEl.classList.add('hidden');
-      if (mediaLinks.includes(url)) { input.value = ''; return; }
-      mediaLinks.push(url); input.value = ''; renderLinkTags();
-    }
-
-    function removeLink(idx) { mediaLinks.splice(idx, 1); renderLinkTags(); }
-
-    function renderLinkTags() {
-      const tags   = document.getElementById('link-tags');
-      const hidden = document.getElementById('link-hidden-inputs');
-      tags.innerHTML = ''; hidden.innerHTML = '';
-      mediaLinks.forEach((url, i) => {
-        const label = url.replace(/^https?:\/\//, '');
-        tags.innerHTML += `
-          <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 12px;max-width:100%;">
-            <a href="${url}" target="_blank" rel="noopener" style="font-size:13px;color:#f59e0b;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" title="${url}">${label}</a>
-            <button type="button" onclick="removeLink(${i})" style="color:#6b7280;font-size:16px;line-height:1;background:none;border:none;cursor:pointer;flex-shrink:0;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#6b7280'">×</button>
-          </div>`;
-        const inp = document.createElement('input');
-        inp.type = 'hidden'; inp.name = 'mediaLinks'; inp.value = url;
-        hidden.appendChild(inp);
-      });
-    }
-
-    document.getElementById('link-input')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); addLink(); }
-    });
-
-    // ── Custom dropdowns ──
-    let selectedServices = [];
-    let selectedAddons   = [];
-
+    // ── Custom dropdowns + external-links widget ──
+    // Shared across both the profile-completion gate (external links section) and the
+    // booking form's client-type dropdown, so defined unconditionally rather than inside
+    // the booking-form guard below.
     function toggleDropdown(id) {
       const trigger = document.getElementById(`${id}-trigger`);
       const menu    = document.getElementById(`${id}-menu`);
@@ -814,36 +633,7 @@
       });
     }
 
-    function toggleService(value) {
-      const idx = selectedServices.indexOf(value);
-      if (idx === -1) selectedServices.push(value); else selectedServices.splice(idx, 1);
-      document.querySelectorAll('#cs-service-menu .custom-select-option').forEach(opt => {
-        opt.classList.toggle('active', selectedServices.includes(opt.dataset.value));
-      });
-      const label   = document.getElementById('cs-service-label');
-      const trigger = document.getElementById('cs-service-trigger');
-      if (selectedServices.length === 0) { label.textContent = 'Select services'; trigger.classList.remove('selected'); }
-      else { label.textContent = selectedServices.join(', '); trigger.classList.add('selected'); trigger.classList.remove('error'); document.getElementById('err-service').classList.add('hidden'); }
-      const container = document.getElementById('service-hidden-inputs');
-      container.innerHTML = '';
-      selectedServices.forEach(s => { const inp = document.createElement('input'); inp.type='hidden'; inp.name='serviceType'; inp.value=s; container.appendChild(inp); });
-    }
-
-    function toggleAddon(value) {
-      const idx = selectedAddons.indexOf(value);
-      if (idx === -1) selectedAddons.push(value); else selectedAddons.splice(idx, 1);
-      document.querySelectorAll('#cs-addon-menu .custom-select-option').forEach(opt => {
-        opt.classList.toggle('active', selectedAddons.includes(opt.dataset.value));
-      });
-      const label   = document.getElementById('cs-addon-label');
-      const trigger = document.getElementById('cs-addon-trigger');
-      if (selectedAddons.length === 0) { label.textContent = 'Select add-ons'; trigger.classList.remove('selected'); }
-      else { label.textContent = selectedAddons.join(', '); trigger.classList.add('selected'); }
-      const container = document.getElementById('addon-hidden-inputs');
-      container.innerHTML = '';
-      selectedAddons.forEach(a => { const inp = document.createElement('input'); inp.type='hidden'; inp.name='addOns'; inp.value=a; container.appendChild(inp); });
-      updateEstimate();
-    }
+    document.addEventListener('click', e => { if (!e.target.closest('.custom-select')) closeAllDropdowns(); });
 
     // External links: platform dropdown + handle input side by side. Enter or
     // the check button commits the pair as a badge above the field.
@@ -999,6 +789,268 @@
       else window.addEventListener('resize', sync);
     })();
 
+    function selectClientType(value) {
+      document.getElementById('clientType').value = value;
+      document.getElementById('cs-clientType-label').textContent = value;
+      const trigger = document.getElementById('cs-clientType-trigger');
+      trigger.classList.add('selected'); trigger.classList.remove('error');
+      document.getElementById('err-clientType').classList.add('hidden');
+      document.querySelectorAll('#cs-clientType-menu .custom-select-option').forEach(o => o.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+      document.getElementById('cs-clientType-menu').classList.remove('open');
+      trigger.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    // Require "You are a(n)" + at least one external link before the profile-completion
+    // gate can submit — the booking form itself skips re-asking once these are on the account.
+    document.getElementById('gate-form')?.addEventListener('submit', e => {
+      let ok = true;
+
+      if (!document.getElementById('clientType').value) {
+        e.preventDefault();
+        document.getElementById('cs-clientType-trigger').classList.add('error');
+        document.getElementById('err-clientType').classList.remove('hidden');
+        ok = false;
+      }
+
+      if (!platformEntries.length) {
+        e.preventDefault();
+        const err = document.getElementById('err-platform');
+        err.textContent = 'Please add at least one external link.';
+        err.classList.remove('hidden');
+        ok = false;
+      }
+
+      if (!ok) e.preventDefault();
+    });
+
+    // Only run booking-form logic when the booking form is present (profile complete)
+    if (document.getElementById('booking-form')) {
+    // Some browsers restore stale form field values (including hidden inputs like
+    // pricingTier) on a manual reload. Reset to the parsed HTML's defaults so that
+    // can't desync from what's actually shown on screen.
+    document.getElementById('booking-form').reset();
+
+    let currentStep = 1;
+
+    function goToStep(next) {
+      if (next > currentStep && !validateStep(currentStep)) return;
+
+      document.getElementById(`step-${currentStep}`).classList.remove('active');
+      document.getElementById(`dot-${currentStep}`).className = next > currentStep ? 'step-dot done' : 'step-dot inactive';
+
+      currentStep = next;
+
+      document.getElementById(`step-${currentStep}`).classList.add('active');
+      document.getElementById(`dot-${currentStep}`).className = 'step-dot active';
+
+      const line = document.getElementById('line-1');
+      if (line) line.className = currentStep > 1 ? 'step-line done' : 'step-line';
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function validateStep(step) {
+      let ok = true;
+      if (step === 1) {
+        const tier       = document.getElementById('pricingTier').value;
+        const brief      = document.getElementById('projectBrief');
+        const clientType = document.getElementById('clientType');
+
+        const svcTrigger        = document.getElementById('cs-service-trigger');
+        const tierTrigger       = document.getElementById('cs-tier-trigger');
+        const clientTypeTrigger = document.getElementById('cs-clientType-trigger');
+
+        if (clientTypeTrigger) {
+          if (!clientType.value) {
+            clientTypeTrigger.classList.add('error');
+            document.getElementById('err-clientType').classList.remove('hidden');
+          } else {
+            clientTypeTrigger.classList.remove('error');
+            document.getElementById('err-clientType').classList.add('hidden');
+          }
+        }
+        if (!clientType.value) ok = false;
+
+        if (!selectedServices.length) {
+          svcTrigger.classList.add('error');
+          document.getElementById('err-service').classList.remove('hidden');
+          ok = false;
+        } else {
+          svcTrigger.classList.remove('error');
+          document.getElementById('err-service').classList.add('hidden');
+        }
+
+        if (!tier) {
+          tierTrigger.classList.add('error');
+          document.getElementById('err-tier').classList.remove('hidden');
+          ok = false;
+        } else {
+          tierTrigger.classList.remove('error');
+          document.getElementById('err-tier').classList.add('hidden');
+        }
+
+        if (tier === 'Custom') {
+          const budget = document.getElementById('budget');
+          if (!budget.value.trim()) {
+            budget.classList.add('error');
+            document.getElementById('err-budget').classList.remove('hidden');
+            ok = false;
+          } else {
+            budget.classList.remove('error');
+            document.getElementById('err-budget').classList.add('hidden');
+          }
+        }
+
+        if (!brief.value.trim()) {
+          brief.classList.add('error');
+          document.getElementById('err-brief').classList.remove('hidden');
+          ok = false;
+        } else {
+          brief.classList.remove('error');
+          document.getElementById('err-brief').classList.add('hidden');
+        }
+
+        const couponInput  = document.getElementById('coupon-input');
+        const couponMsg    = document.getElementById('coupon-msg');
+        if (couponInput?.value.trim()) {
+          couponMsg.className = 'text-xs mt-2 text-amber-400';
+          couponMsg.textContent = 'Click Apply to validate your coupon before continuing.';
+          ok = false;
+        }
+      }
+      return ok;
+    }
+
+    // ── File upload ──
+    const dropZone  = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileList  = document.getElementById('file-list');
+    const MAX_SIZE  = 250 * 1024 * 1024;
+    let selectedFiles = [];
+
+    dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('drag-over'); addFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', () => addFiles(fileInput.files));
+
+    function addFiles(incoming) {
+      const errEl = document.getElementById('err-files');
+      errEl.classList.add('hidden');
+      let tooLarge = [];
+      Array.from(incoming).forEach(f => {
+        if (f.size > MAX_SIZE) { tooLarge.push(f.name); return; }
+        if (!selectedFiles.find(x => x.name === f.name && x.size === f.size)) selectedFiles.push(f);
+      });
+      if (tooLarge.length) {
+        errEl.textContent = `File(s) exceed 250 MB: ${tooLarge.join(', ')}`;
+        errEl.classList.remove('hidden');
+      }
+      rebuildFileInput(); renderFileList();
+    }
+
+    function removeFile(idx) { selectedFiles.splice(idx, 1); rebuildFileInput(); renderFileList(); }
+
+    function rebuildFileInput() {
+      const dt = new DataTransfer();
+      selectedFiles.forEach(f => dt.items.add(f));
+      fileInput.files = dt.files;
+    }
+
+    function renderFileList() {
+      fileList.innerHTML = '';
+      selectedFiles.forEach((f, i) => {
+        const size = f.size < 1048576 ? (f.size/1024).toFixed(1)+' KB' : (f.size/1048576).toFixed(1)+' MB';
+        fileList.innerHTML += `
+          <div class="file-item">
+            <div class="flex items-center gap-3 min-w-0">
+              <iconify-icon icon="material-symbols-light:attach-file" width="16" height="16" style="color:#f59e0b;flex-shrink:0;"></iconify-icon>
+              <span class="text-gray-300 truncate">${f.name}</span>
+            </div>
+            <div class="flex items-center gap-4 flex-shrink-0 ml-4">
+              <span class="text-gray-500 text-xs">${size}</span>
+              <button type="button" onclick="removeFile(${i})" class="text-gray-500 hover:text-red-400 transition-colors text-lg leading-none">×</button>
+            </div>
+          </div>`;
+      });
+    }
+
+    // ── Media links ──
+    let mediaLinks = [];
+
+    function addLink() {
+      const input = document.getElementById('link-input');
+      const errEl = document.getElementById('err-link');
+      const url   = input.value.trim();
+      try { new URL(url); } catch { errEl.classList.remove('hidden'); return; }
+      errEl.classList.add('hidden');
+      if (mediaLinks.includes(url)) { input.value = ''; return; }
+      mediaLinks.push(url); input.value = ''; renderLinkTags();
+    }
+
+    function removeLink(idx) { mediaLinks.splice(idx, 1); renderLinkTags(); }
+
+    function renderLinkTags() {
+      const tags   = document.getElementById('link-tags');
+      const hidden = document.getElementById('link-hidden-inputs');
+      tags.innerHTML = ''; hidden.innerHTML = '';
+      mediaLinks.forEach((url, i) => {
+        const label = url.replace(/^https?:\/\//, '');
+        tags.innerHTML += `
+          <div style="display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:6px 12px;max-width:100%;">
+            <a href="${url}" target="_blank" rel="noopener" style="font-size:13px;color:#f59e0b;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;" title="${url}">${label}</a>
+            <button type="button" onclick="removeLink(${i})" style="color:#6b7280;font-size:16px;line-height:1;background:none;border:none;cursor:pointer;flex-shrink:0;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#6b7280'">×</button>
+          </div>`;
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'mediaLinks'; inp.value = url;
+        hidden.appendChild(inp);
+      });
+    }
+
+    document.getElementById('link-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addLink(); }
+    });
+
+    // ── Custom dropdowns (toggleDropdown/closeAllDropdowns defined above, outside this guard) ──
+    let selectedServices = [];
+    let selectedAddons   = [];
+
+    function toggleService(value) {
+      const idx = selectedServices.indexOf(value);
+      if (idx === -1) selectedServices.push(value); else selectedServices.splice(idx, 1);
+      document.querySelectorAll('#cs-service-menu .custom-select-option').forEach(opt => {
+        opt.classList.toggle('active', selectedServices.includes(opt.dataset.value));
+      });
+      const label   = document.getElementById('cs-service-label');
+      const trigger = document.getElementById('cs-service-trigger');
+      if (selectedServices.length === 0) { label.textContent = 'Select services'; trigger.classList.remove('selected'); }
+      else { label.textContent = selectedServices.join(', '); trigger.classList.add('selected'); trigger.classList.remove('error'); document.getElementById('err-service').classList.add('hidden'); }
+      const container = document.getElementById('service-hidden-inputs');
+      container.innerHTML = '';
+      selectedServices.forEach(s => { const inp = document.createElement('input'); inp.type='hidden'; inp.name='serviceType'; inp.value=s; container.appendChild(inp); });
+    }
+
+    function toggleAddon(value) {
+      const idx = selectedAddons.indexOf(value);
+      if (idx === -1) selectedAddons.push(value); else selectedAddons.splice(idx, 1);
+      document.querySelectorAll('#cs-addon-menu .custom-select-option').forEach(opt => {
+        opt.classList.toggle('active', selectedAddons.includes(opt.dataset.value));
+      });
+      const label   = document.getElementById('cs-addon-label');
+      const trigger = document.getElementById('cs-addon-trigger');
+      if (selectedAddons.length === 0) { label.textContent = 'Select add-ons'; trigger.classList.remove('selected'); }
+      else { label.textContent = selectedAddons.join(', '); trigger.classList.add('selected'); }
+      const container = document.getElementById('addon-hidden-inputs');
+      container.innerHTML = '';
+      selectedAddons.forEach(a => { const inp = document.createElement('input'); inp.type='hidden'; inp.name='addOns'; inp.value=a; container.appendChild(inp); });
+      updateEstimate();
+    }
+
+    // External links now live on the account (see the shared widget defined above,
+    // outside this guard) — the booking form only renders the locked, read-only badges.
+
     // ── Price estimate ──
     const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
     const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
@@ -1146,20 +1198,6 @@
       document.getElementById('budget-field').classList.toggle('hidden', value !== 'Custom');
       updateEstimate();
     }
-
-    function selectClientType(value) {
-      document.getElementById('clientType').value = value;
-      document.getElementById('cs-clientType-label').textContent = value;
-      const trigger = document.getElementById('cs-clientType-trigger');
-      trigger.classList.add('selected'); trigger.classList.remove('error');
-      document.getElementById('err-clientType').classList.add('hidden');
-      document.querySelectorAll('#cs-clientType-menu .custom-select-option').forEach(o => o.classList.remove('active'));
-      event.currentTarget.classList.add('active');
-      document.getElementById('cs-clientType-menu').classList.remove('open');
-      trigger.classList.remove('open'); trigger.setAttribute('aria-expanded', 'false');
-    }
-
-    document.addEventListener('click', e => { if (!e.target.closest('.custom-select')) closeAllDropdowns(); });
 
     // ── Tier prefill from ?tier= ──
     (function() {

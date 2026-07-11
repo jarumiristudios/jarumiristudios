@@ -96,6 +96,8 @@
     .custom-select-option:last-child { border-bottom: none; }
     .custom-select-option:hover { background: rgba(245,158,11,0.08); }
     .custom-select-option.active { background: rgba(245,158,11,0.12); color: #f59e0b; }
+    .custom-select-option .opt-label { font-size: 14px; color: #fff; font-weight: 500; }
+    .custom-select-option .opt-desc  { font-size: 12px; color: #6b7280; margin-top: 2px; }
   </style>
 </head>
 <body class="bg-[#080808] text-gray-100 antialiased">
@@ -212,7 +214,7 @@
           <iconify-icon id="icon-profile" class="collapse-icon" icon="material-symbols-light:expand-more" width="18" height="18"></iconify-icon>
         </button>
         <div id="body-profile" class="section-body collapsed">
-          <form action="/dashboard/account/profile" method="POST" novalidate>
+          <form id="profile-form" action="/dashboard/account/profile" method="POST" novalidate>
             <div class="space-y-4">
               <div>
                 <label class="form-label" for="profile-name">Full name <span class="text-amber-400">*</span></label>
@@ -225,24 +227,37 @@
                   value="<%= user.location || '' %>" placeholder="City, Country" autocomplete="country-name" required />
               </div>
               <div>
-                <label class="form-label">I am a <span class="text-gray-500 font-normal">(optional)</span></label>
-                <input type="hidden" id="accountType" name="accountType" value="<%= user.accountType || '' %>" />
-                <%
-                  const typeLabels = { content_creator: 'Independent content creator', business: 'Business / Brand', agency: 'Agency', other: 'Other' };
-                  const currentTypeLabel = typeLabels[user.accountType] || null;
-                %>
-                <div class="custom-select" id="cs-type">
-                  <button type="button" class="custom-select-trigger <%= currentTypeLabel ? 'selected' : '' %>" id="cs-type-trigger" onclick="toggleDropdown('cs-type')" aria-haspopup="listbox" aria-expanded="false">
-                    <span id="cs-type-label"><%= currentTypeLabel || '— Select one' %></span>
+                <label class="form-label">You are a(n) <span class="text-amber-400">*</span></label>
+                <input type="hidden" id="clientType" name="clientType" value="<%= user.clientType || '' %>" />
+                <div class="custom-select" id="cs-clientType">
+                  <button type="button" class="custom-select-trigger <%= user.clientType ? 'selected' : '' %>" id="cs-clientType-trigger" onclick="toggleDropdown('cs-clientType')" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="cs-clientType-label"><%= user.clientType || 'Select an option' %></span>
                     <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
                   </button>
-                  <div class="custom-select-menu" id="cs-type-menu" role="listbox">
-                    <div class="custom-select-option <%= user.accountType === 'content_creator' ? 'active' : '' %>" onclick="selectType('content_creator','Independent content creator')" role="option" data-value="content_creator">Independent content creator</div>
-                    <div class="custom-select-option <%= user.accountType === 'business' ? 'active' : '' %>" onclick="selectType('business','Business / Brand')" role="option" data-value="business">Business / Brand</div>
-                    <div class="custom-select-option <%= user.accountType === 'agency' ? 'active' : '' %>" onclick="selectType('agency','Agency')" role="option" data-value="agency">Agency</div>
-                    <div class="custom-select-option <%= user.accountType === 'other' ? 'active' : '' %>" onclick="selectType('other','Other')" role="option" data-value="other">Other</div>
+                  <div class="custom-select-menu" id="cs-clientType-menu" role="listbox">
+                    <div class="custom-select-option <%= user.clientType === 'Independent Creator' ? 'active' : '' %>" onclick="selectClientType('Independent Creator')" role="option" data-value="Independent Creator">
+                      <p class="opt-label">Independent Creator</p>
+                      <p class="opt-desc">Solo creator or freelancer making your own content</p>
+                    </div>
+                    <div class="custom-select-option <%= user.clientType === 'Agency' ? 'active' : '' %>" onclick="selectClientType('Agency')" role="option" data-value="Agency">
+                      <p class="opt-label">Agency</p>
+                      <p class="opt-desc">Managing projects on behalf of a client</p>
+                    </div>
+                    <div class="custom-select-option <%= user.clientType === 'Studio' ? 'active' : '' %>" onclick="selectClientType('Studio')" role="option" data-value="Studio">
+                      <p class="opt-label">Studio</p>
+                      <p class="opt-desc">In-house production team or post-production house</p>
+                    </div>
+                    <div class="custom-select-option <%= user.clientType === 'Brand / Business' ? 'active' : '' %>" onclick="selectClientType('Brand / Business')" role="option" data-value="Brand / Business">
+                      <p class="opt-label">Brand / Business</p>
+                      <p class="opt-desc">Company producing content for your own brand</p>
+                    </div>
+                    <div class="custom-select-option <%= user.clientType === 'Other' ? 'active' : '' %>" onclick="selectClientType('Other')" role="option" data-value="Other">
+                      <p class="opt-label">Other</p>
+                      <p class="opt-desc">Something else — tell us in your project brief</p>
+                    </div>
                   </div>
                 </div>
+                <p class="field-error hidden mt-1" id="err-clientType">Please select an option.</p>
               </div>
               <div>
                 <label class="form-label" for="profile-external-link">Website / Portfolio <span class="text-gray-500 font-normal">(optional)</span></label>
@@ -250,11 +265,85 @@
                   value="<%= user.externalLink || '' %>" placeholder="https://yoursite.com" />
               </div>
             </div>
-            <div class="mt-5 flex items-center justify-between gap-4">
-              <p class="text-xs text-gray-500">Used to pre-fill future project submissions.</p>
+            <div class="mt-5 flex items-center justify-end gap-4">
               <button type="submit"
                 class="px-5 py-2.5 rounded-full bg-white/6 border border-white/12 text-white text-sm font-semibold hover:bg-white/10 transition-colors shrink-0">
                 Save profile
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ── Section: External links ── -->
+      <div class="section-card">
+        <button class="section-header" onclick="toggleSection('links')">
+          <span class="text-sm font-semibold text-white">External links</span>
+          <iconify-icon id="icon-links" class="collapse-icon" icon="material-symbols-light:expand-more" width="18" height="18"></iconify-icon>
+        </button>
+        <div id="body-links" class="section-body collapsed">
+          <form action="/dashboard/account/profile" method="POST" novalidate>
+            <input type="hidden" name="platformsSubmitted" value="1" />
+            <input type="hidden" name="name" value="<%= user.name || '' %>" />
+            <input type="hidden" name="location" value="<%= user.location || '' %>" />
+            <input type="hidden" name="clientType" value="<%= user.clientType || '' %>" />
+            <input type="hidden" name="externalLink" value="<%= user.externalLink || '' %>" />
+
+            <p class="text-xs text-gray-500 mb-4">Saved here once — new project requests will reuse these instead of asking again.</p>
+
+            <div>
+              <label class="form-label">Platforms <span class="text-gray-500 font-normal">(up to 3)</span></label>
+              <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
+              <div id="platform-hidden-inputs"></div>
+              <div class="flex gap-2">
+                <input type="hidden" id="platform-select" value="Instagram" />
+                <div class="custom-select w-36 shrink-0" id="cs-platform">
+                  <button type="button" class="custom-select-trigger" id="cs-platform-trigger" onclick="toggleDropdown('cs-platform')" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="cs-platform-label">Instagram</span>
+                    <iconify-icon class="custom-select-chevron" icon="material-symbols-light:keyboard-arrow-down"></iconify-icon>
+                  </button>
+                  <div class="custom-select-menu" id="cs-platform-menu" role="listbox">
+                    <div class="custom-select-option active" onclick="selectPlatformOption('Instagram')" role="option" data-value="Instagram">
+                      <p class="opt-label">Instagram</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Twitter')" role="option" data-value="Twitter">
+                      <p class="opt-label">Twitter</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('TikTok')" role="option" data-value="TikTok">
+                      <p class="opt-label">TikTok</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('OnlyFans')" role="option" data-value="OnlyFans">
+                      <p class="opt-label">OnlyFans</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Fansly')" role="option" data-value="Fansly">
+                      <p class="opt-label">Fansly</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Fanview')" role="option" data-value="Fanview">
+                      <p class="opt-label">Fanview</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('MannyVids')" role="option" data-value="MannyVids">
+                      <p class="opt-label">MannyVids</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Pornhub')" role="option" data-value="Pornhub">
+                      <p class="opt-label">Pornhub</p>
+                    </div>
+                    <div class="custom-select-option" onclick="selectPlatformOption('Other')" role="option" data-value="Other">
+                      <p class="opt-label">Other</p>
+                    </div>
+                  </div>
+                </div>
+                <input class="form-input" type="text" id="platform-handle-input" placeholder="@handle or profile URL" />
+                <button type="button" id="platform-add-btn" onclick="addPlatformEntry()" aria-label="Add link" class="shrink-0 w-11 rounded-md bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:border-white/25 transition-colors flex items-center justify-center">
+                  <iconify-icon icon="material-symbols-light:check" width="18" height="18"></iconify-icon>
+                </button>
+              </div>
+              <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
+            </div>
+
+            <div class="mt-5 flex items-center justify-end gap-4">
+              <button type="submit"
+                class="px-5 py-2.5 rounded-full bg-white/6 border border-white/12 text-white text-sm font-semibold hover:bg-white/10 transition-colors shrink-0">
+                Save links
               </button>
             </div>
           </form>
@@ -404,24 +493,183 @@
       });
     }
 
-    function selectType(value, label) {
-      document.getElementById('accountType').value = value;
-      document.getElementById('cs-type-label').textContent = label;
-      const trigger = document.getElementById('cs-type-trigger');
+    function selectClientType(value) {
+      document.getElementById('clientType').value = value;
+      document.getElementById('cs-clientType-label').textContent = value;
+      const trigger = document.getElementById('cs-clientType-trigger');
       trigger.classList.add('selected');
-      document.querySelectorAll('#cs-type-menu .custom-select-option').forEach(o => o.classList.remove('active'));
+      trigger.classList.remove('error');
+      document.getElementById('err-clientType').classList.add('hidden');
+      document.querySelectorAll('#cs-clientType-menu .custom-select-option').forEach(o => o.classList.remove('active'));
       event.currentTarget.classList.add('active');
-      closeAllDropdowns();
+      document.getElementById('cs-clientType-menu').classList.remove('open');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
     }
 
     document.addEventListener('click', e => { if (!e.target.closest('.custom-select')) closeAllDropdowns(); });
+
+    // ── External links: platform dropdown + handle input side by side. Enter or
+    // the check button commits the pair as a badge above the field. ──
+    let platformEntries = <%- JSON.stringify((user.platforms || []).map(p => ({ platform: p.platform, handle: p.handle }))) %>;
+    const MAX_PLATFORM_LINKS = 3;
+
+    function selectPlatformOption(value) {
+      document.getElementById('platform-select').value = value;
+      document.getElementById('cs-platform-label').textContent = value;
+      document.querySelectorAll('#cs-platform-menu .custom-select-option').forEach(o => {
+        o.classList.toggle('active', o.dataset.value === value);
+      });
+      const trigger = document.getElementById('cs-platform-trigger');
+      document.getElementById('cs-platform-menu').classList.remove('open');
+      trigger.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+      const handleInput = document.getElementById('platform-handle-input');
+      handleInput.placeholder = value === 'Other' ? 'Paste your link (https://…)' : '@handle or profile URL';
+      handleInput.focus();
+    }
+
+    function addPlatformEntry() {
+      const platform = document.getElementById('platform-select').value;
+      const input    = document.getElementById('platform-handle-input');
+      const handle   = input.value.trim();
+      const err      = document.getElementById('err-platform');
+
+      if (platformEntries.length >= MAX_PLATFORM_LINKS) return;
+
+      if (!handle) {
+        input.classList.add('error');
+        err.textContent = 'Please enter a handle or profile URL.';
+        err.classList.remove('hidden');
+        return;
+      }
+      input.classList.remove('error');
+      err.classList.add('hidden');
+
+      platformEntries.push({ platform, handle });
+      input.value = '';
+      renderPlatformBadges();
+      input.focus();
+    }
+
+    function removePlatformEntry(i) {
+      platformEntries.splice(i, 1);
+      renderPlatformBadges();
+    }
+
+    // Known real domains only — never fabricate a TLD for a platform we don't
+    // actually know the domain of, and never touch a URL the user already typed.
+    const PLATFORM_DOMAINS = {
+      Instagram: 'instagram.com',
+      Twitter:   'x.com',
+      TikTok:    'tiktok.com',
+      OnlyFans:  'onlyfans.com',
+      Fansly:    'fansly.com',
+      Pornhub:   'pornhub.com',
+      MannyVids: 'manyvids.com',
+    };
+
+    // TikTok profile URLs require the @ in the path (tiktok.com/@user); every
+    // other platform here uses a bare username, so strip a leading @ instead.
+    function handlePath(platform, value) {
+      const bare = value.replace(/^@/, '');
+      return platform === 'TikTok' ? `@${bare}` : bare;
+    }
+
+    function linkPreview(platform, value) {
+      const v = value.trim();
+      let text;
+      if (/^https?:\/\//i.test(v)) {
+        text = v.replace(/^https?:\/\//i, '');
+      } else {
+        const domain = PLATFORM_DOMAINS[platform];
+        text = domain ? `${domain}/${handlePath(platform, v)}` : v;
+      }
+      return text.length > 32 ? `${text.slice(0, 32)}…` : text;
+    }
+
+    // Real, absolute URL to open — null when we don't know the platform's domain
+    // and the user didn't paste a full URL, rather than guessing one.
+    function linkHref(platform, value) {
+      const v = value.trim();
+      if (/^https?:\/\//i.test(v)) return v;
+      const domain = PLATFORM_DOMAINS[platform];
+      return domain ? `https://${domain}/${handlePath(platform, v)}` : null;
+    }
+
+    function renderPlatformBadges() {
+      const badges    = document.getElementById('platform-badges');
+      const container = document.getElementById('platform-hidden-inputs');
+      badges.innerHTML = '';
+      container.innerHTML = '';
+
+      platformEntries.forEach((entry, i) => {
+        const badge = document.createElement('span');
+        badge.className = 'inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-xs font-semibold text-amber-400';
+
+        const href = linkHref(entry.platform, entry.handle);
+        const text = document.createElement(href ? 'a' : 'span');
+        if (href) {
+          text.href = href;
+          text.target = '_blank';
+          text.rel = 'noopener';
+          text.className = 'no-underline';
+        }
+        text.textContent = `${entry.platform} | ${linkPreview(entry.platform, entry.handle)}`;
+        badge.appendChild(text);
+
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.setAttribute('aria-label', `Remove ${entry.platform} link`);
+        removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
+        removeBtn.textContent = '×';
+        removeBtn.onclick = () => removePlatformEntry(i);
+        badge.appendChild(removeBtn);
+
+        badges.appendChild(badge);
+
+        const nameInput = document.createElement('input');
+        nameInput.type = 'hidden'; nameInput.name = 'platformNames'; nameInput.value = entry.platform;
+        container.appendChild(nameInput);
+
+        const handleInput = document.createElement('input');
+        handleInput.type = 'hidden'; handleInput.name = 'platformHandles'; handleInput.value = entry.handle;
+        container.appendChild(handleInput);
+      });
+
+      badges.classList.toggle('hidden', platformEntries.length === 0);
+
+      const atMax  = platformEntries.length >= MAX_PLATFORM_LINKS;
+      const input  = document.getElementById('platform-handle-input');
+      const addBtn = document.getElementById('platform-add-btn');
+      input.disabled  = atMax;
+      addBtn.disabled = atMax;
+      addBtn.classList.toggle('opacity-40', atMax);
+      input.placeholder = atMax ? 'Maximum 3 links added' : '@handle or profile URL';
+    }
+
+    document.getElementById('platform-handle-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addPlatformEntry(); }
+    });
+
+    renderPlatformBadges();
+
+    // "You are a(n)" now feeds bookings directly, so require it here too.
+    document.getElementById('profile-form')?.addEventListener('submit', e => {
+      const clientType = document.getElementById('clientType');
+      if (!clientType.value) {
+        e.preventDefault();
+        document.getElementById('cs-clientType-trigger').classList.add('error');
+        document.getElementById('err-clientType').classList.remove('hidden');
+      }
+    });
 
     function toggleSidebar() {
       document.getElementById('sidebar').classList.toggle('-translate-x-full');
       document.getElementById('sidebar-overlay').classList.toggle('hidden');
     }
 
-    const SECTIONS = ['account-info', 'profile', 'password', 'signout', 'delete'];
+    const SECTIONS = ['account-info', 'profile', 'links', 'password', 'signout', 'delete'];
 
     function toggleSection(id) {
       const body = document.getElementById('body-' + id);

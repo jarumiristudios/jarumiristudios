@@ -210,7 +210,9 @@
   <main class="pt-28 pb-20 px-6">
     <div class="max-w-2xl mx-auto">
 
-      <% var hasReusableProfile = !!(locals.loggedInUser && locals.lastBooking && locals.lastBooking.clientType && locals.lastBooking.platforms && locals.lastBooking.platforms.length > 0); %>
+      <% var accountPlatforms = (locals.loggedInUser && locals.platforms) ? locals.platforms : []; %>
+      <% var accountClientType = (locals.loggedInUser && locals.clientType) ? locals.clientType : ''; %>
+      <% var hasReusableProfile = !!(locals.loggedInUser && locals.lastBooking && accountClientType && accountPlatforms.length > 0); %>
       <% if (locals.success) { %>
       <!-- ══════════ SUCCESS STATE ══════════ -->
       <div class="text-center py-16">
@@ -372,8 +374,8 @@
         <input type="hidden" name="name"           value="<%= locals.lastBooking.name %>" />
         <input type="hidden" name="email"          value="<%= locals.loggedInUser.email %>" />
         <input type="hidden" name="location"       value="<%= locals.lastBooking.location %>" />
-        <input type="hidden" name="clientType"     value="<%= locals.lastBooking.clientType %>" />
-        <% locals.lastBooking.platforms.forEach(p => { %>
+        <input type="hidden" name="clientType"     value="<%= accountClientType %>" />
+        <% accountPlatforms.forEach(p => { %>
         <input type="hidden" name="platformNames"   value="<%= p.platform %>" />
         <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
         <% }) %>
@@ -399,7 +401,16 @@
               <p class="field-error hidden" id="err-location">Please enter your location.</p>
             </div>
 
-            <!-- Client type custom dropdown -->
+            <!-- Client type -->
+            <% if (locals.loggedInUser && accountClientType) { %>
+            <!-- Locked to the account — edited from account settings, not re-asked here -->
+            <div>
+              <label class="form-label">You are a(n)</label>
+              <input type="hidden" id="clientType" name="clientType" value="<%= accountClientType %>" />
+              <p class="text-sm text-white"><%= accountClientType %></p>
+              <a href="/dashboard/account" class="inline-block mt-1 text-xs text-gray-500 hover:text-gray-300 transition-colors">Edit in account settings →</a>
+            </div>
+            <% } else { %>
             <div>
               <label class="form-label">You are a(n) <span class="text-amber-400">*</span></label>
               <input type="hidden" id="clientType" name="clientType" value="<%= locals.formData ? formData.clientType : '' %>" />
@@ -433,8 +444,24 @@
               </div>
               <p class="field-error hidden" id="err-clientType">Please select an option.</p>
             </div>
+            <% } %>
 
             <!-- External links (platform + handle) -->
+            <% if (locals.loggedInUser && accountPlatforms.length > 0) { %>
+            <!-- Locked to the account — edited from account settings, not re-asked here -->
+            <div>
+              <label class="form-label">External links</label>
+              <div class="flex flex-wrap gap-2">
+                <% accountPlatforms.forEach(p => { %>
+                <input type="hidden" name="platformNames" value="<%= p.platform %>" />
+                <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
+                <span class="inline-flex items-center pl-3 pr-3 py-1.5 rounded-md bg-amber-400/10 border border-amber-400/20 text-xs font-semibold text-amber-400"><%= p.platform %> | <%= p.handle %></span>
+                <% }) %>
+              </div>
+              <a href="/dashboard/account" class="inline-block mt-2 text-xs text-gray-500 hover:text-gray-300 transition-colors">Edit in account settings →</a>
+              <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
+            </div>
+            <% } else { %>
             <div>
               <label class="form-label">External links <span class="text-amber-400">*</span> <span class="text-gray-400 font-normal">(1–3 links)</span></label>
               <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
@@ -483,6 +510,10 @@
               </div>
               <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
             </div>
+            <% if (locals.loggedInUser) { %>
+            <p class="text-xs text-gray-500 mt-1.5">Save these to <a href="/dashboard/account" class="text-amber-400 hover:text-amber-300">your account</a> so we don't ask again next time.</p>
+            <% } %>
+            <% } %>
           </div>
 
           <div class="mt-8 flex justify-end">
@@ -835,8 +866,10 @@
 
         const clientTypeTrigger = document.getElementById('cs-clientType-trigger');
         const clientTypeErr     = document.getElementById('err-clientType');
-        if (!clientType.value) { clientTypeTrigger.classList.add('error');    clientTypeErr.classList.remove('hidden'); }
-        else                   { clientTypeTrigger.classList.remove('error'); clientTypeErr.classList.add('hidden'); }
+        if (clientTypeTrigger) {
+          if (!clientType.value) { clientTypeTrigger.classList.add('error');    clientTypeErr?.classList.remove('hidden'); }
+          else                   { clientTypeTrigger.classList.remove('error'); clientTypeErr?.classList.add('hidden'); }
+        }
 
         const platformErr = document.getElementById('err-platform');
         if (!platformEntries.length) {
@@ -1129,7 +1162,10 @@
 
     // External links: platform dropdown + handle input side by side. Enter or
     // the + button commits the pair as a badge above the field.
-    let platformEntries = []; // [{ platform, handle }]
+    // When external links are locked to the account, the badges are rendered server-side
+    // and hidden inputs are already in the DOM — seed the count so step-1 validation (which
+    // checks platformEntries.length) passes without needing the interactive widget.
+    let platformEntries = new Array(<%= (locals.loggedInUser && accountPlatforms.length > 0) ? accountPlatforms.length : 0 %>).fill(null);
     const MAX_PLATFORM_LINKS = 3;
 
     function selectPlatformOption(value) {

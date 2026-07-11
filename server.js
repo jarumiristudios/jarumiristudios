@@ -764,6 +764,8 @@ app.get("/hire", async (req, res) => {
   res.render("hire", {
     loggedInUser: { email: user.email },
     lastBooking,
+    platforms: user.platforms || [],
+    clientType: user.clientType || "",
     canUploadNow,
   });
 });
@@ -839,10 +841,14 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
   if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || !platforms.length) {
     let loggedInUser = null;
     let lastBooking = null;
+    let platforms = [];
+    let accountClientType = "";
     if (req.session.userId) {
       const user = await User.findById(req.session.userId);
       if (user) {
         loggedInUser = { email: user.email };
+        platforms = user.platforms || [];
+        accountClientType = user.clientType || "";
         lastBooking = user.bookings?.length
           ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
           : null;
@@ -853,6 +859,8 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       formData: req.body,
       loggedInUser,
       lastBooking,
+      platforms,
+      clientType: accountClientType,
       canUploadNow,
     });
   }
@@ -1139,19 +1147,35 @@ app.get("/dashboard/account", requireClient, async (req, res) => {
 });
 
 app.post("/dashboard/account/profile", requireClient, async (req, res) => {
-  const { name, location, accountType, externalLink } = req.body;
+  const { name, location, clientType, externalLink } = req.body;
   if (!name?.trim() || !location?.trim()) {
     const user = await User.findById(req.session.userId);
     return res.render("dashboard-account", { user, error: "Name and location are required.", success: null });
   }
   const rawLink = (externalLink || "").trim();
   const safeLink = rawLink && !rawLink.match(/^https?:\/\//) ? "https://" + rawLink : rawLink;
-  await User.findByIdAndUpdate(req.session.userId, {
+
+  const update = {
     name: name.trim(),
     location: location.trim(),
-    accountType: (accountType || "").trim(),
+    clientType: (clientType || "").trim(),
     externalLink: safeLink,
-  });
+  };
+
+  // The Profile section and the External links section are separate forms on the same
+  // page (and the profile-completion gate on /dashboard/new combines both) — only touch
+  // platforms when the submitting form actually included the links widget, so saving one
+  // section never silently wipes the other.
+  if (req.body.platformsSubmitted !== undefined) {
+    const platformNames   = [].concat(req.body.platformNames   || []);
+    const platformHandles = [].concat(req.body.platformHandles || []);
+    update.platforms = platformNames
+      .map((platform, i) => ({ platform, handle: (platformHandles[i] || "").trim() }))
+      .filter((p) => p.platform && p.handle)
+      .slice(0, MAX_PLATFORM_LINKS);
+  }
+
+  await User.findByIdAndUpdate(req.session.userId, update);
   const redirectTo = req.query.next || "/dashboard/account";
   res.redirect(redirectTo.startsWith("/") ? redirectTo : "/dashboard/account");
 });
@@ -1205,7 +1229,7 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
     req.session.destroy(() => res.redirect("/login"));
     return;
   }
-  const profileComplete = !!(user.name?.trim() && user.location?.trim());
+  const profileComplete = !!(user.name?.trim() && user.location?.trim() && user.platforms?.length && user.clientType?.trim());
   const [canUploadNow, lastBooking] = await Promise.all([
     hasTrustedDepositHistory(req.session.userId),
     user.bookings?.length
