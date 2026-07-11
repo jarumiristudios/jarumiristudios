@@ -496,7 +496,8 @@
 
           <% if (booking.depositStatus === 'none') { %>
           <%
-            const canSendDeposit = !booking.archived && (booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress');
+            const hasVideoUpload = (booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype));
+            const canSendDeposit = !booking.archived && (booking.status === 'in-review' || booking.status === 'accepted' || booking.status === 'in-progress') && hasVideoUpload;
           %>
           <form action="/admin/booking/<%= booking._id %>/send-deposit" method="POST" class="space-y-3">
             <div>
@@ -538,6 +539,8 @@
           </form>
           <% if (!canSendDeposit && booking.archived) { %>
           <p class="text-xs text-gray-600 mt-2">Restore this booking to enable invoicing.</p>
+          <% } else if (!canSendDeposit && !hasVideoUpload) { %>
+          <p class="text-xs text-gray-600 mt-2">Waiting on the client to upload at least one video before invoicing.</p>
           <% } else if (!canSendDeposit) { %>
           <p class="text-xs text-gray-600 mt-2">Set status to <span class="text-gray-400">In Review</span> or higher to enable invoicing.</p>
           <% } %>
@@ -849,8 +852,13 @@
     (function () {
       var acceptBtn = document.querySelector('.s-accepted');
       if (!acceptBtn) return;
+      var hasVideoUpload = <%- (booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype)) ? 'true' : 'false' %>;
       acceptBtn.closest('form').addEventListener('submit', function (e) {
         e.preventDefault();
+        if (!hasVideoUpload) {
+          showToast('Video required', "The client hasn't uploaded a video yet — wait for at least one before sending the deposit invoice.", 'error');
+          return;
+        }
         document.getElementById('accept-modal').classList.remove('hidden');
         document.getElementById('accept-modal-price').focus();
       });

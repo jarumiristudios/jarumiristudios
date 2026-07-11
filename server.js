@@ -1971,6 +1971,12 @@ app.post("/admin/booking/:id/send-deposit", requireAdmin, async (req, res) => {
     return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("Move status to In Review first so the client can upload files before the deposit invoice goes out.")}`);
   }
 
+  // No deposit ask until the client has actually put footage on the table — otherwise
+  // we'd be invoicing against a project that's still just a form submission.
+  if (!(booking.uploadedFiles || []).some(f => f.mimetype && /^video\//i.test(f.mimetype))) {
+    return res.redirect(`/admin/booking/${req.params.id}?error=${encodeURIComponent("The client hasn't uploaded a video yet — wait for at least one before sending the deposit invoice.")}`);
+  }
+
   const agreedPrice = parseFloat(req.body.agreedPrice);
   if (!agreedPrice || agreedPrice <= 0) return res.redirect(`/admin/booking/${req.params.id}`);
 
