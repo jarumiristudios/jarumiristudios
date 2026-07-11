@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://code.iconify.design/iconify-icon/2.1.0/iconify-icon.min.js"></script>
   <style>
     body { font-family: 'Inter', sans-serif; }
     h1, .brand { font-family: 'Syne', sans-serif; }
@@ -47,11 +48,6 @@
       <%= error %>
     </div>
     <% } %>
-    <% if (locals.reset) { %>
-    <div class="mb-5 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm text-center">
-      Password updated — log in with your new password.
-    </div>
-    <% } %>
 
     <form action="/login" method="POST" class="space-y-4">
       <input type="hidden" name="next" value="<%= next %>" />
@@ -79,6 +75,7 @@
     </p>
   </div>
 
+  <%- include('_toast') %>
   <script>
     function togglePassword(btn) {
       const input = btn.previousElementSibling;
@@ -88,6 +85,9 @@
       btn.querySelector('.eye-hide').style.display = showing ? 'none' : '';
       btn.style.color = showing ? '#6b7280' : '#f59e0b';
     }
+    <% if (locals.reset) { %>
+    showToast('Password updated', 'Log in with your new password.');
+    <% } %>
   </script>
 </body>
 </html>
