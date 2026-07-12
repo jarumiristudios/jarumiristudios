@@ -620,10 +620,20 @@ function messageAttachments(m) {
   return [];
 }
 
+// "Image"/"Audio"/"Video"/"File" label for a message preview — deliberately not the filename,
+// which is meaningless out of context (thread-list rows, toasts) compared to just knowing what
+// kind of file was sent.
+function attachmentTypeLabel(mimetype) {
+  if (/^video\//i.test(mimetype)) return "Video";
+  if (/^audio\//i.test(mimetype)) return "Audio";
+  if (/^image\//i.test(mimetype)) return "Image";
+  return "File";
+}
+
 function messagePreview(body, attachments) {
   if (body) return body.length > 60 ? body.slice(0, 60) + "…" : body;
   if (attachments && attachments.length) {
-    return attachments.length === 1 ? "📎 " + attachments[0].originalName : "📎 " + attachments.length + " files";
+    return attachments.length === 1 ? "📎 " + attachmentTypeLabel(attachments[0].mimetype) : "📎 " + attachments.length + " files";
   }
   return "";
 }
@@ -663,7 +673,7 @@ async function buildReplySnapshot(bookingId, replyToMessageId) {
     messageId: original._id,
     senderRole: original.senderRole,
     body: original.body || "",
-    attachmentSummary: atts.length ? (atts.length === 1 ? atts[0].originalName : atts.length + " files") : "",
+    attachmentSummary: atts.length ? (atts.length === 1 ? attachmentTypeLabel(atts[0].mimetype) : atts.length + " files") : "",
   };
 }
 
@@ -1477,6 +1487,55 @@ app.post("/dashboard/account/delete", requireClient, async (req, res) => {
 
   await User.findByIdAndDelete(user._id);
   req.session.destroy(() => res.redirect("/"));
+});
+
+app.get("/dashboard/invoices", requireClient, async (req, res) => {
+  const bookings = await BookingRequest.find({ clientId: req.session.userId, filesDeleted: { $ne: true } })
+    .select("crCode agreedPrice depositStatus depositInvoiceUrl depositDueDate finalPaymentStatus finalInvoiceUrl finalDueDate revisionInvoices createdAt")
+    .sort({ createdAt: -1 });
+
+  const invoices = [];
+  bookings.forEach((booking) => {
+    if (booking.depositStatus && booking.depositStatus !== "none") {
+      invoices.push({
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        label: "Deposit (30%)",
+        amount: booking.agreedPrice ? booking.agreedPrice * 0.30 : null,
+        status: booking.depositStatus,
+        dueDate: booking.depositDueDate,
+        invoiceUrl: booking.depositInvoiceUrl,
+        sortDate: booking.depositDueDate || booking.createdAt,
+      });
+    }
+    if (booking.finalPaymentStatus && booking.finalPaymentStatus !== "none") {
+      invoices.push({
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        label: "Final payment (70%)",
+        amount: booking.agreedPrice ? booking.agreedPrice * 0.70 : null,
+        status: booking.finalPaymentStatus,
+        dueDate: booking.finalDueDate,
+        invoiceUrl: booking.finalInvoiceUrl,
+        sortDate: booking.finalDueDate || booking.createdAt,
+      });
+    }
+    (booking.revisionInvoices || []).forEach((ri) => {
+      invoices.push({
+        bookingId: booking._id,
+        crCode: booking.crCode,
+        label: "Revision",
+        amount: ri.amount,
+        status: ri.status,
+        dueDate: ri.dueDate,
+        invoiceUrl: ri.invoiceUrl,
+        sortDate: ri.createdAt,
+      });
+    });
+  });
+  invoices.sort((a, b) => new Date(b.sortDate) - new Date(a.sortDate));
+
+  res.render("dashboard-invoices", { invoices });
 });
 
 app.get("/dashboard/new", requireClient, async (req, res) => {

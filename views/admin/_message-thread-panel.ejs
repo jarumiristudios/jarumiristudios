@@ -99,7 +99,8 @@
   <% } %>
   <% const isMine = m.senderRole === myRole; %>
   <% const msgAttachments = m.deleted ? [] : ((m.attachments && m.attachments.length) ? m.attachments : (m.attachment && m.attachment.storedName ? [m.attachment] : [])); %>
-  <% const replyAttachmentSummary = msgAttachments.length ? (msgAttachments.length === 1 ? msgAttachments[0].originalName : msgAttachments.length + ' files') : ''; %>
+  <% const attTypeLabel = (mt) => /^video\//i.test(mt) ? 'Video' : /^audio\//i.test(mt) ? 'Audio' : /^image\//i.test(mt) ? 'Image' : 'File'; %>
+  <% const replyAttachmentSummary = msgAttachments.length ? (msgAttachments.length === 1 ? attTypeLabel(msgAttachments[0].mimetype) : msgAttachments.length + ' files') : ''; %>
   <div class="bubble-row <%= isMine ? 'mine' : 'theirs' %> <%= m.deleted ? 'deleted' : '' %>" data-message-id="<%= m._id %>" data-reply-body="<%= m.deleted ? '' : (m.body || '') %>" data-reply-attachment="<%= replyAttachmentSummary %>">
     <% if (!m.deleted) { %>
     <% if (isMine) { %>

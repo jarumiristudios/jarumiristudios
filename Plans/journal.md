@@ -1,5 +1,19 @@
 # Journal
 
+## 2026-07-12 — Dashboard Invoices Page, Notifications Search/Filter, Attachment Preview Privacy Fix
+
+**What was built:** Uncommitted, three unrelated changes bundled in one working session.
+
+- **`/dashboard/invoices` (new route + `views/dashboard-invoices.ejs`).** The sidebar already linked here (from an earlier commit) but the page didn't exist. Flattens every booking's deposit (30%), final payment (70%), and any ad-hoc `revisionInvoices[]` entries into one list, newest-first by due/created date, each row showing project code (links to `/dashboard/booking/:id`), a status pill (`pending`/`paid`/`void`), due date (pending only), amount, and a Pay now/View link out to the Stripe-hosted `invoiceUrl`. Same search (by project code) + status-filter-dropdown pattern as the messages/notifications inboxes, with separate mobile-card and desktop-table layouts. Archived-and-files-deleted bookings (`filesDeleted: true`) are excluded from the query.
+- **Notifications page search/filter.** `views/dashboard-notifications.ejs` gained the same search-input-plus-filter-dropdown treatment already used on messages/invoices — two independent axes (date range: all/today/this week/this month; notification type: status update/invoice sent/payment confirmed/due date updated/due date reminder/deliverable ready), a filter-count badge, and a dedicated "no notifications match" empty state distinct from the true-empty state. The static page header ("Notifications" / "Updates on your projects.") was removed to make room.
+- **Attachment previews now show a file-type label instead of the filename.** `attachmentTypeLabel(mimetype)` (`server.js`, plus an inline-arrow-function duplicate in each EJS template that doesn't have server-side access to the helper) maps a mimetype to `Image`/`Audio`/`Video`/`File`. Replaces the original filename in every place a message preview is shown out of context: thread-list last-message previews (admin/associate/client `messages.ejs`), the reply-preview quote block and its live-inserted equivalent (`_message-thread-panel.ejs` × 3 portals, `_message-thread-script.ejs`), and `buildReplySnapshot()`'s frozen `attachmentSummary`. A sent filename could be identifying or sensitive on its own (e.g. a client's real name or project detail baked into a file they uploaded) and was never actually useful in a list row anyway — knowing "an image was sent" is enough context, the file itself is one tap away.
+
+**Decisions made:**
+- `attachmentTypeLabel` duplicated inline in each EJS template rather than centralized in one shared JS file — matches the existing pattern already used for other tiny cross-portal helpers in this codebase (e.g. the reply-attachment-summary logic itself, pre-existing), and avoids adding a new shared client-side script just for a 4-line regex switch.
+- Invoices page reuses the message/notification inbox's search+filter dropdown pattern verbatim (same markup/JS shape) rather than inventing a new UI for a third list page — keeps all "search a list of project-scoped things" pages feeling identical.
+
+---
+
 ## 2026-07-12 — Unify Local/R2 Upload Folder Layout
 
 **What was built:** Shipped in `e580943`. Both storage backends now share one folder shape: `<crCode>/{raws,finals,chats/clients,chats/associate}` — replacing R2's previously-flat `<crCode>/<storedName>` keys and local disk's differently-nested (`files/<type>/`, further split by staff identity per the commit below) layout. `raws` is client-submitted files (no more video/audio/image/other split), `finals` is delivered deliverables (no more per-staff split), and chat attachments now split only client-vs-staff (`chats/clients/` or `chats/associate/`, the latter shared by admin and every associate) rather than by individual account.

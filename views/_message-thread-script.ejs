@@ -602,9 +602,16 @@
         '<span>' + escapeHtml(truncateTaggedName(attachment.originalName)) + '</span></a>';
   }
 
+  function attachmentTypeLabel(mimetype) {
+    if (/^video\//i.test(mimetype)) return 'Video';
+    if (/^audio\//i.test(mimetype)) return 'Audio';
+    if (/^image\//i.test(mimetype)) return 'Image';
+    return 'File';
+  }
+
   function attachmentsPreviewLabel(attachments) {
     if (!attachments.length) return '';
-    return attachments.length === 1 ? '📎 ' + attachments[0].originalName : '📎 ' + attachments.length + ' files';
+    return attachments.length === 1 ? '📎 ' + attachmentTypeLabel(attachments[0].mimetype) : '📎 ' + attachments.length + ' files';
   }
 
   // ── File viewer (opened by clicking an uploaded file's thumbnail in chat) ──
@@ -962,7 +969,7 @@
     if (!list || list.querySelector('[data-message-id="' + m._id + '"]')) return;
     var isMine = m.senderRole === myRole;
     var atts = messageAttachments(m);
-    var attachmentSummary = atts.length ? (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
+    var attachmentSummary = atts.length ? (atts.length === 1 ? attachmentTypeLabel(atts[0].mimetype) : atts.length + ' files') : '';
     var row = document.createElement('div');
     row.className = 'bubble-row ' + (isMine ? 'mine' : 'theirs');
     row.dataset.messageId = m._id;

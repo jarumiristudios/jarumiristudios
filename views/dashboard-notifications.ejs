@@ -117,14 +117,6 @@
 
     <main class="max-w-[700px] mx-auto px-5 py-10">
 
-      <!-- Page header -->
-      <div class="mb-8 flex items-center justify-between gap-4">
-        <div>
-          <h1 class="text-xl font-bold text-white">Notifications</h1>
-          <p class="text-gray-600 text-sm mt-0.5">Updates on your projects.</p>
-        </div>
-      </div>
-
       <% if (!notifications || notifications.length === 0) { %>
       <!-- Empty state -->
       <div id="notif-empty" class="text-center py-20 border border-white/5 rounded-md bg-white/1">
@@ -136,6 +128,74 @@
       </div>
 
       <% } else { %>
+
+      <!-- Search + filter -->
+      <div class="mb-5 flex items-center gap-2">
+        <div class="relative flex-1">
+          <iconify-icon icon="material-symbols-light:search" width="18" height="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none"></iconify-icon>
+          <input id="notif-search" type="text" placeholder="Search notifications..." autocomplete="off"
+            class="w-full bg-[#0d0d0d] border border-white/8 rounded-md pl-9 pr-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-white/20 transition-colors" />
+        </div>
+
+        <div class="relative shrink-0" id="notif-filter">
+          <button type="button" id="notif-filter-btn" onclick="toggleNotifFilter()"
+            class="flex items-center gap-2 bg-white/[0.04] border border-white/10 rounded-md px-4 py-2.5 text-sm text-gray-300 hover:border-white/20 hover:text-white transition-colors whitespace-nowrap">
+            <iconify-icon icon="material-symbols-light:filter-list" width="15" height="15"></iconify-icon>
+            <span>Filter</span>
+            <span id="notif-filter-count" class="hidden min-w-4 h-4 px-1 rounded-full bg-amber-400 text-black text-[10px] font-bold items-center justify-center"></span>
+            <svg id="notif-filter-chevron" class="w-3.5 h-3.5 text-gray-500 transition-transform duration-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+
+          <div id="notif-filter-menu"
+            class="hidden absolute right-0 top-full mt-1.5 z-50 min-w-[200px] bg-[#111] border border-white/10 rounded-md overflow-hidden shadow-xl">
+            <div class="px-4 pt-2.5 pb-1 text-[11px] uppercase tracking-wide text-gray-600 font-semibold">Date</div>
+            <button type="button" class="notif-date-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-white hover:bg-white/[0.05] transition-colors" data-value="all" onclick="applyDateFilter(this)">
+              <iconify-icon icon="material-symbols-light:select-all" width="15" height="15"></iconify-icon> All time
+            </button>
+            <button type="button" class="notif-date-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="today" onclick="applyDateFilter(this)">
+              <iconify-icon icon="material-symbols-light:today" width="15" height="15"></iconify-icon> Today
+            </button>
+            <button type="button" class="notif-date-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="week" onclick="applyDateFilter(this)">
+              <iconify-icon icon="material-symbols-light:calendar-view-week" width="15" height="15"></iconify-icon> This week
+            </button>
+            <button type="button" class="notif-date-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="month" onclick="applyDateFilter(this)">
+              <iconify-icon icon="material-symbols-light:calendar-month" width="15" height="15"></iconify-icon> This month
+            </button>
+
+            <div class="border-t border-white/8 mt-1"></div>
+            <div class="px-4 pt-2.5 pb-1 text-[11px] uppercase tracking-wide text-gray-600 font-semibold">Type</div>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-white hover:bg-white/[0.05] transition-colors" data-value="all" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:select-all" width="15" height="15"></iconify-icon> All types
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="status_change" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:autorenew" width="15" height="15"></iconify-icon> Status update
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="invoice_sent" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:receipt-long" width="15" height="15"></iconify-icon> Invoice sent
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="payment_confirmed" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:check-circle" width="15" height="15"></iconify-icon> Payment confirmed
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="due_date_updated" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:calendar-clock" width="15" height="15"></iconify-icon> Due date updated
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="due_date_reminder" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:alarm" width="15" height="15"></iconify-icon> Due date reminder
+            </button>
+            <button type="button" class="notif-type-option w-full flex items-center gap-2.5 text-left px-4 py-2.5 text-sm text-gray-400 hover:bg-white/[0.05] hover:text-white transition-colors" data-value="deliverable_ready" onclick="applyTypeFilter(this)">
+              <iconify-icon icon="material-symbols-light:download-for-offline" width="15" height="15"></iconify-icon> Deliverable ready
+            </button>
+
+            <div class="border-t border-white/8 mt-1"></div>
+            <button type="button" id="notif-filter-clear" class="w-full text-center px-4 py-2.5 text-xs text-gray-500 hover:text-gray-300 hover:bg-white/[0.05] transition-colors">Clear filters</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="notif-no-results" class="hidden text-center py-16 border border-white/5 rounded-md bg-white/1 mb-4">
+        <p class="text-gray-600 text-sm">No notifications match your search.</p>
+      </div>
+
       <div id="notif-list" class="border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]">
         <% notifications.forEach(n => {
           const isUnread = !n.read;
@@ -169,7 +229,7 @@
             iconName = 'material-symbols-light:close-small'; iconClass = 'dismiss'; iconColor = '#f87171';
           }
         %>
-        <div class="notif-row <%= isUnread ? 'unread' : '' %>">
+        <div class="notif-row <%= isUnread ? 'unread' : '' %>" data-type="<%= n.type %>" data-ts="<%= date.getTime() %>" data-search="<%= n.message.toLowerCase() %>">
           <div class="notif-icon <%= iconClass %>">
             <iconify-icon icon="<%= iconName %>" width="17" height="17" style="color:<%= iconColor %>"></iconify-icon>
           </div>
@@ -198,6 +258,101 @@
       document.getElementById('sidebar').classList.toggle('-translate-x-full');
       document.getElementById('sidebar-overlay').classList.toggle('hidden');
     }
+
+    (function () {
+      const searchInput = document.getElementById('notif-search');
+      const rows = document.querySelectorAll('.notif-row');
+      const noResults = document.getElementById('notif-no-results');
+      if (!searchInput || !rows.length) return;
+
+      let dateFilter = 'all';
+      let typeFilter = 'all';
+
+      function startOfToday() {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        return d.getTime();
+      }
+
+      function matchesDate(ts, filter) {
+        if (filter === 'all') return true;
+        const now = Date.now();
+        if (filter === 'today') return ts >= startOfToday();
+        if (filter === 'week') return ts >= now - 7 * 86400000;
+        if (filter === 'month') return ts >= now - 30 * 86400000;
+        return true;
+      }
+
+      function updateFilterCount() {
+        const badge = document.getElementById('notif-filter-count');
+        const count = (dateFilter !== 'all' ? 1 : 0) + (typeFilter !== 'all' ? 1 : 0);
+        if (count > 0) {
+          badge.textContent = count;
+          badge.classList.remove('hidden');
+          badge.classList.add('flex');
+        } else {
+          badge.classList.add('hidden');
+          badge.classList.remove('flex');
+        }
+      }
+
+      function applyFilters() {
+        const term = searchInput.value.trim().toLowerCase();
+        let visibleCount = 0;
+
+        rows.forEach(row => {
+          const matchesSearch = !term || row.dataset.search.includes(term);
+          const matchesType = typeFilter === 'all' || row.dataset.type === typeFilter;
+          const isVisible = matchesSearch && matchesType && matchesDate(parseInt(row.dataset.ts, 10), dateFilter);
+          row.style.display = isVisible ? '' : 'none';
+          if (isVisible) visibleCount++;
+        });
+
+        noResults.classList.toggle('hidden', visibleCount !== 0);
+        updateFilterCount();
+      }
+
+      searchInput.addEventListener('input', applyFilters);
+
+      window.toggleNotifFilter = function () {
+        const menu = document.getElementById('notif-filter-menu');
+        const chevron = document.getElementById('notif-filter-chevron');
+        const open = !menu.classList.contains('hidden');
+        menu.classList.toggle('hidden', open);
+        chevron.style.transform = open ? '' : 'rotate(180deg)';
+      };
+
+      document.addEventListener('click', (e) => {
+        const dropdown = document.getElementById('notif-filter');
+        if (dropdown && !dropdown.contains(e.target)) {
+          document.getElementById('notif-filter-menu').classList.add('hidden');
+          document.getElementById('notif-filter-chevron').style.transform = '';
+        }
+      });
+
+      window.applyDateFilter = function (btn) {
+        dateFilter = btn.dataset.value;
+        document.querySelectorAll('.notif-date-option').forEach(b => {
+          b.classList.toggle('text-white', b === btn);
+          b.classList.toggle('text-gray-400', b !== btn);
+        });
+        applyFilters();
+      };
+
+      window.applyTypeFilter = function (btn) {
+        typeFilter = btn.dataset.value;
+        document.querySelectorAll('.notif-type-option').forEach(b => {
+          b.classList.toggle('text-white', b === btn);
+          b.classList.toggle('text-gray-400', b !== btn);
+        });
+        applyFilters();
+      };
+
+      document.getElementById('notif-filter-clear').addEventListener('click', () => {
+        applyDateFilter(document.querySelector('.notif-date-option[data-value="all"]'));
+        applyTypeFilter(document.querySelector('.notif-type-option[data-value="all"]'));
+      });
+    })();
   </script>
   <%- include('_toast') %>
   <%- include('_notif-poll') %>

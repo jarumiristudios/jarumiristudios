@@ -32,7 +32,8 @@
 | `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects — per-project card grid by default, or a flat file-grid view scoped to one type (video/audio/image/other) via a filter dropdown (replaced the old pill-button row; sort-by-oldest removed) |
 | `GET /dashboard/uploads/:filename` | — | Protected file serving for the owning client only |
 | `GET /dashboard/deliverables/:filename` | — | Final deliverable download for the owning client only, gated on `status === "completed"` |
-| `/dashboard/notifications` | Notifications | In-app alerts (status changes, invoices sent, payments confirmed, project dismissed); marks all read on view |
+| `/dashboard/notifications` | Notifications | In-app alerts (status changes, invoices sent, payments confirmed, project dismissed); marks all read on view; search bar + date-range/type filter dropdown (2026-07-12, uncommitted) |
+| `/dashboard/invoices` | Invoices | Every deposit/final/revision invoice across all of a client's projects, flattened into one list (2026-07-12, uncommitted) — project code, status pill, due date, amount, Pay now/View link to the Stripe-hosted invoice; search by project code + status filter dropdown |
 | `POST /dashboard/notifications/mark-all-read` | — | Marks all notifications read, redirects back to the notifications page |
 | `GET /api/notifications/poll` | — | Polling endpoint for live unread count + new items since a timestamp |
 | `POST /api/notifications/mark-read` | — | Marks all notifications read (JSON response, used by poll-driven UI) |

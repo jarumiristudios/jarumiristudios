@@ -339,7 +339,8 @@
           <p class="text-sm text-gray-300 mt-0.5 truncate">
             <%
               const atts = lastAtts;
-              const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
+              const attTypeLabel = (m) => /^video\//i.test(m) ? 'Video' : /^audio\//i.test(m) ? 'Audio' : /^image\//i.test(m) ? 'Image' : 'File';
+              const attsLabel = atts.length ? '📎 ' + (atts.length === 1 ? attTypeLabel(atts[0].mimetype) : atts.length + ' files') : '';
             %>
             <%= t.lastMessage.senderRole === 'admin' ? 'You: ' : '' %><%= t.lastMessage.deleted ? 'This message was deleted' : (t.lastMessage.body || attsLabel) %>
           </p>
