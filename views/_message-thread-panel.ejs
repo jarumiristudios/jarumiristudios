@@ -233,7 +233,7 @@
   </div>
   <% }) %>
   <% if (!messages.length) { %>
-  <div class="h-full flex flex-col items-center justify-center text-center px-6">
+  <div id="message-empty-state" class="h-full flex flex-col items-center justify-center text-center px-6">
     <div class="w-16 h-16 rounded-full bg-white/3 border border-white/8 flex items-center justify-center mb-4">
       <iconify-icon icon="material-symbols-light:<%= booking.chatUnlocked ? 'chat-bubble-outline' : 'lock-outline' %>" width="28" height="28" class="text-gray-600"></iconify-icon>
     </div>

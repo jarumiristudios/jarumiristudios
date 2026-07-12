@@ -1004,6 +1004,8 @@
         '<span class="bubble-time ' + (m.body ? 'corner' : 'block') + '">' + editedLabelHtml + '<span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</span>' +
       '</div></div>' +
       (isMine ? radioHtml : actionsHtml);
+    var emptyState = document.getElementById('message-empty-state');
+    if (emptyState) emptyState.remove();
     maybeInsertDaySeparator(list, new Date(m.createdAt));
     list.appendChild(row);
     scrollToBottom();
