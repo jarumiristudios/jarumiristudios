@@ -57,27 +57,37 @@
       font-size: 11px; font-weight: 600; color: #6b7280;
       background: rgba(255,255,255,0.05); padding: 4px 14px; border-radius: 9999px;
     }
-    .bubble-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+    .bubble-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; position: relative; }
     .bubble-row.mine { justify-content: flex-end; }
+    .bubble-row::before {
+      content: ''; position: absolute; left: 0; right: 0; top: -4px; bottom: -4px;
+      background: rgba(245,158,11,0.18); z-index: -1; pointer-events: none;
+      opacity: 0; transition: opacity 0.7s ease;
+    }
+    .bubble-row.flash-highlight::before { opacity: 1; }
     .bubble-col { max-width: 70%; }
     .msg-select-radio {
-      display: flex; align-items: center; justify-content: center;
+      display: none; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-      background: none; border: none; color: #6b7280;
-      opacity: 0; pointer-events: none; transition: opacity 0.15s, color 0.15s;
+      background: rgba(255,255,255,0.08); border: none; color: #d1d5db;
+      transition: color 0.15s;
     }
-    #message-list.selecting .msg-select-radio { opacity: 1; pointer-events: auto; }
-    .bubble-row.selected .msg-select-radio { color: #f59e0b; }
+    #message-list.selecting .msg-select-radio { display: flex; }
+    #message-list.selecting .bubble-row { -webkit-user-select: none; user-select: none; }
+    .bubble-row.selected .msg-select-radio { color: #f59e0b; background: rgba(245,158,11,0.15); }
     .bubble-actions { display: none; align-items: center; gap: 2px; flex-shrink: 0; }
     .bubble-row.selected .bubble-actions { display: flex; }
     .bubble-row.selected .bubble { outline: 2px solid rgba(245,158,11,0.4); outline-offset: 2px; }
     .bubble-action-btn {
       display: flex; align-items: center; justify-content: center;
       width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
-      background: none; border: none; color: #6b7280;
+      background: rgba(255,255,255,0.08); border: none; color: #e5e7eb;
       transition: color 0.15s, background 0.15s;
     }
-    .bubble-action-btn:hover { color: #e5e7eb; background: rgba(255,255,255,0.06); }
+    .bubble-action-btn:hover { color: #fff; background: rgba(255,255,255,0.16); }
+    #message-list.multi-selecting .reply-action-btn,
+    #message-list.multi-selecting .edit-action-btn { display: none; }
+    .edited-label { font-size: 10.5px; font-style: italic; opacity: 0.55; margin-right: 3px; }
     .bubble-row.deleted .bubble { font-style: italic; }
     .bubble-deleted-text { color: rgba(0,0,0,0.5); }
     .bubble-row.theirs .bubble-deleted-text { color: #6b7280; }
@@ -95,13 +105,9 @@
       display: block; font-size: 12.5px; opacity: 0.75;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
     }
-    .bubble-row.flash-highlight .bubble { animation: flash-highlight 1s ease; }
-    @keyframes flash-highlight {
-      0%, 100% { box-shadow: none; }
-      25% { box-shadow: 0 0 0 3px rgba(245,158,11,0.5); }
-    }
     .bubble {
       position: relative;
+      z-index: 1;
       width: fit-content;
       max-width: 100%;
       min-width: 96px;
@@ -113,6 +119,10 @@
     }
     .bubble-row.theirs .bubble { background: rgba(255,255,255,0.06); color: #e5e7eb; border-bottom-left-radius: 3px; }
     .bubble-row.mine .bubble { background: var(--color-orange-300); color: #000; border-bottom-right-radius: 3px; }
+    /* The theirs bubble's own background is only 6% opaque, so the highlight ribbon behind it
+       (see .bubble-row::before above) would otherwise bleed straight through — give it an opaque
+       backing under the same tint just while highlighted, so the ribbon is actually hidden behind it. */
+    .bubble-row.theirs.flash-highlight .bubble { background: linear-gradient(rgba(255,255,255,0.06), rgba(255,255,255,0.06)), #0d0d0d; }
     .time-spacer { display: inline-block; width: 58px; height: 1px; }
     .time-spacer.with-tick { width: 78px; }
     .bubble-time {
@@ -140,6 +150,16 @@
     .attachment-badge .badge-thumb img, .attachment-badge .badge-thumb video { object-fit: contain; background: rgba(0,0,0,0.4); }
     .badge-thumb-lg { width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.1); }
     .badge-thumb-preview { width: 320px; height: 320px; border-radius: 10px; }
+    /* A caption below an attached image is a plain inline span, so it was contributing its own
+       full (unwrapped) text width to the bubble's fit-content sizing — if the caption is wider
+       than the now-correctly-shrunk image, the bubble grows to match the caption, stranding the
+       image with a gap. Taking the caption out of that width calculation lets the image drive the
+       bubble's width and the caption wrap to match. Scoped to .attachment-badge only — tagged
+       files render as a small inline icon+filename chip (.tagged-inline-badge), not a large
+       preview, and shouldn't constrain the bubble's width at all. */
+    .bubble:has(.attachment-badge) .bubble-body-text {
+      display: block; contain: inline-size; width: 100%;
+    }
     .badge-thumb-audio { background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.22); }
     @keyframes thumb-spin { to { transform: rotate(360deg); } }
     .thumb-loading-overlay {
@@ -231,7 +251,13 @@
     .viewer-player-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
     .viewer-player { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
     .viewer-player video { max-width: 100%; max-height: 100%; display: block; }
-    .viewer-player img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .viewer-player img {
+      max-width: 100%; max-height: 100%; object-fit: contain; display: block;
+      cursor: zoom-in; transition: transform 0.12s ease-out;
+      -webkit-user-drag: none; user-select: none;
+    }
+    .viewer-player.zoomed img { cursor: grab; }
+    .viewer-player.dragging img { cursor: grabbing; transition: none; }
     .viewer-info-bar { flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid rgba(255,255,255,0.06); }
     .viewer-file-panel { width: 220px; flex-shrink: 0; border-left: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; overflow: hidden; }
     .viewer-file-panel-header { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 11px; color: #6b7280; font-weight: 500; }
@@ -290,12 +316,10 @@
         const isActive = typeof booking !== 'undefined' && booking && String(booking._id) === String(t.booking._id);
         const statusBucket = t.booking.status === 'completed' ? 'completed' : 'active';
         const lastAtts = (t.lastMessage.attachments && t.lastMessage.attachments.length) ? t.lastMessage.attachments : (t.lastMessage.attachment && t.lastMessage.attachment.storedName ? [t.lastMessage.attachment] : []);
-        const lastMediaAtt = lastAtts.find(a => a.mimetype && /^(video|image)\//i.test(a.mimetype));
+        // Always the project's own thumbnail — never a chat attachment, even the most recent one.
         const projectThumbFile = (t.booking.uploadedFiles || []).find(f => f.mimetype && /^(video|image)\//i.test(f.mimetype));
-        const thumbSrc = lastMediaAtt ? '/admin/messages/attachments/' + lastMediaAtt.storedName
-          : projectThumbFile ? '/admin/uploads/' + projectThumbFile.storedName
-          : null;
-        const thumbIsVideo = /^video\//i.test((lastMediaAtt || projectThumbFile || {}).mimetype || '');
+        const thumbSrc = projectThumbFile ? '/admin/uploads/' + projectThumbFile.storedName : null;
+        const thumbIsVideo = /^video\//i.test((projectThumbFile || {}).mimetype || '');
       %>
       <a href="/admin/messages/<%= t.booking._id %>" class="thread-row <%= isActive ? 'active' : '' %>" data-booking-id="<%= t.booking._id %>" data-status="<%= statusBucket %>" data-unread="<%= t.unreadCount %>">
         <div class="thread-icon">

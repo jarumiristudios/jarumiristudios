@@ -4,7 +4,198 @@
   var panel = document.getElementById('thread-panel');
   var currentSocket = null;
   var pendingUploads = {}; // pendingId -> in-flight XHR, so the cancel button can abort it
-  var pendingRetryData = {}; // pendingId -> { body, files, tagged } snapshot, kept around after a cancel so retry can resend it
+  var pendingRetryData = {}; // pendingId -> { body, files, tagged, replyToMessageId } snapshot, kept around after a cancel so retry can resend it
+
+  // ── Long-press-to-select (mouse-hold on desktop, touch-hold on mobile) ──
+  var selectedMessageIds = new Set(); // multi-select: reply only allowed while exactly one is selected
+  var replyState = null; // { messageId, senderLabel, body, attachment } while composing a reply, else null
+  var editState = null; // { messageId } while editing an existing message, else null
+  var longPressTimer = null;
+  var longPressStartXY = null;
+  var LONG_PRESS_MS = 500;
+  var LONG_PRESS_MOVE_TOLERANCE = 10;
+
+  function replyLabelJs(senderRole, myRole, bookingName) {
+    if (senderRole === myRole) return 'You';
+    return myRole === 'client' ? 'Studio' : (bookingName || 'Client');
+  }
+
+  function handleLongPressStart(e) {
+    var row = e.target.closest('.bubble-row');
+    if (!row || row.classList.contains('deleted') || row.dataset.pendingId) return;
+    var point = e.touches ? e.touches[0] : e;
+    longPressStartXY = { x: point.clientX, y: point.clientY };
+    var messageId = row.dataset.messageId;
+    clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(function () {
+      longPressTimer = null;
+      if (navigator.vibrate) navigator.vibrate(15);
+      window.selectMessage(messageId);
+    }, LONG_PRESS_MS);
+  }
+
+  function handleLongPressMove(e) {
+    if (!longPressTimer || !longPressStartXY) return;
+    var point = e.touches ? e.touches[0] : e;
+    var dx = point.clientX - longPressStartXY.x, dy = point.clientY - longPressStartXY.y;
+    if (Math.sqrt(dx * dx + dy * dy) > LONG_PRESS_MOVE_TOLERANCE) cancelLongPress();
+  }
+
+  function cancelLongPress() {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressStartXY = null;
+  }
+
+  function setRadioIcon(row, checked) {
+    var icon = row.querySelector('.msg-select-radio iconify-icon');
+    if (icon) icon.setAttribute('icon', checked ? 'material-symbols-light:check-circle' : 'material-symbols-light:circle-outline');
+  }
+
+  // Reply only makes sense against a single message, so the reply button is hidden (see the
+  // #message-list.multi-selecting CSS rule) as soon as a second bubble joins the selection.
+  function refreshSelectionModeClasses() {
+    var list = document.getElementById('message-list');
+    if (!list) return;
+    list.classList.toggle('selecting', selectedMessageIds.size > 0);
+    list.classList.toggle('multi-selecting', selectedMessageIds.size > 1);
+  }
+
+  function exitSelectionMode() {
+    var list = document.getElementById('message-list');
+    if (!list) return;
+    selectedMessageIds.forEach(function (id) {
+      var row = list.querySelector('.bubble-row[data-message-id="' + id + '"]');
+      if (row) { row.classList.remove('selected'); setRadioIcon(row, false); }
+    });
+    selectedMessageIds.clear();
+    list.classList.remove('selecting', 'multi-selecting');
+  }
+
+  // Toggles one bubble's membership in the selection — tapping/long-pressing an unchecked radio
+  // adds it alongside any others already selected, tapping a checked one removes just that one.
+  window.selectMessage = function (messageId) {
+    var list = document.getElementById('message-list');
+    if (!list) return;
+    var row = list.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row || row.classList.contains('deleted')) return;
+    if (selectedMessageIds.has(messageId)) {
+      selectedMessageIds.delete(messageId);
+      row.classList.remove('selected');
+      setRadioIcon(row, false);
+    } else {
+      selectedMessageIds.add(messageId);
+      row.classList.add('selected');
+      setRadioIcon(row, true);
+    }
+    refreshSelectionModeClasses();
+  };
+
+  function renderReplyPreview() {
+    var bar = document.getElementById('reply-preview-bar');
+    if (!bar) return;
+    if (!replyState) {
+      bar.classList.add('hidden');
+      bar.classList.remove('flex');
+      return;
+    }
+    var senderEl = document.getElementById('reply-preview-sender');
+    var textEl = document.getElementById('reply-preview-text');
+    if (senderEl) senderEl.textContent = replyState.senderLabel;
+    if (textEl) textEl.textContent = replyState.body || (replyState.attachment ? '📎 ' + replyState.attachment : '');
+    bar.classList.remove('hidden');
+    bar.classList.add('flex');
+  }
+
+  function clearReplyState() {
+    replyState = null;
+    renderReplyPreview();
+  }
+
+  window.replyToMessage = function (messageId) {
+    if (selectedMessageIds.size > 1) return; // reply button is hidden once multiple are selected; guard anyway
+    var list = document.getElementById('message-list');
+    var row = list && list.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row) return;
+    var composer = document.getElementById('composer');
+    var myRole = composer ? composer.dataset.myRole : '';
+    var bookingName = composer ? composer.dataset.bookingName : '';
+    var isMine = row.classList.contains('mine');
+    replyState = {
+      messageId: messageId,
+      senderLabel: isMine ? 'You' : (myRole === 'client' ? 'Studio' : (bookingName || 'Client')),
+      body: row.dataset.replyBody || '',
+      attachment: row.dataset.replyAttachment || '',
+    };
+    renderReplyPreview();
+    exitSelectionMode();
+    var bodyInput = document.getElementById('body-input');
+    if (bodyInput) bodyInput.focus();
+  };
+
+  function renderEditPreview() {
+    var bar = document.getElementById('edit-preview-bar');
+    if (!bar) return;
+    bar.classList.toggle('hidden', !editState);
+    bar.classList.toggle('flex', !!editState);
+  }
+
+  function clearEditState() {
+    editState = null;
+    renderEditPreview();
+    var attachBtn = document.getElementById('attach-btn');
+    var attachmentInput = document.getElementById('attachment-input');
+    if (attachBtn) attachBtn.disabled = false;
+    if (attachmentInput) attachmentInput.disabled = false;
+  }
+
+  // Edit is text-only, so the composer's own attachment-picking UI is disabled for the duration —
+  // there's no attachment-edit endpoint, only body text (see server.js .../messages/:id/edit).
+  window.editMessage = function (messageId) {
+    if (selectedMessageIds.size > 1) return; // edit button is hidden once multiple are selected; guard anyway
+    var list = document.getElementById('message-list');
+    var row = list && list.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row) return;
+    clearReplyState();
+    exitSelectionMode();
+    editState = { messageId: messageId };
+    renderEditPreview();
+    var attachBtn = document.getElementById('attach-btn');
+    var attachmentInput = document.getElementById('attachment-input');
+    if (attachBtn) attachBtn.disabled = true;
+    if (attachmentInput) attachmentInput.disabled = true;
+    var bodyInput = document.getElementById('body-input');
+    if (bodyInput) {
+      bodyInput.value = row.dataset.replyBody || '';
+      bodyInput.focus();
+      bodyInput.select();
+    }
+  };
+
+  // Applies a committed edit to an already-rendered bubble — used both for the sender's own
+  // optimistic update and for the 'message-edited' socket event the other party receives.
+  function applyMessageEdited(messageId, body) {
+    var row = document.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row) return;
+    row.dataset.replyBody = body || '';
+    var textEl = row.querySelector('.bubble-body-text');
+    if (textEl) textEl.textContent = body || '';
+    var timeEl = row.querySelector('.bubble-time');
+    if (timeEl && !timeEl.querySelector('.edited-label')) {
+      var label = document.createElement('span');
+      label.className = 'edited-label';
+      label.textContent = 'edited';
+      timeEl.insertBefore(label, timeEl.firstChild);
+    }
+  }
+
+  window.scrollToMessage = function (messageId) {
+    var row = document.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
+    if (!row) return;
+    row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    row.classList.add('flash-highlight');
+    setTimeout(function () { row.classList.remove('flash-highlight'); }, 2200);
+  };
 
   function scrollToBottom() {
     var list = document.getElementById('message-list');
@@ -189,8 +380,8 @@
   // A cancelled or failed upload no longer deletes the pending bubble — it's left in place with a
   // static "upload" icon on each thumbnail so the user can retry the exact same send. This is the
   // only recovery path once the composer's own draft is gone (it clears the moment Send is hit).
-  function markPendingFailed(pendingId, body, files, tagged) {
-    pendingRetryData[pendingId] = { body: body, files: files, tagged: tagged };
+  function markPendingFailed(pendingId, body, files, tagged, replyToMessageId) {
+    pendingRetryData[pendingId] = { body: body, files: files, tagged: tagged, replyToMessageId: replyToMessageId };
     var row = document.querySelector('.bubble-row[data-pending-id="' + pendingId + '"]');
     if (!row) return;
     row.classList.add('cancelled', 'retry-cooldown');
@@ -220,18 +411,19 @@
     if (bubble) bubble.onclick = null;
     var timeText = row.querySelector('.bubble-time-text');
     if (timeText) timeText.textContent = 'Sending…';
-    attemptSend(pendingId, data.body, data.files, data.tagged, row.dataset.bookingId, composer.dataset.myRole, composer.dataset.postPath, composer.dataset.attachmentBase);
+    attemptSend(pendingId, data.body, data.files, data.tagged, row.dataset.bookingId, composer.dataset.myRole, composer.dataset.postPath, composer.dataset.attachmentBase, data.replyToMessageId);
   };
 
   // Sends (or resends) one message. Shared by the composer's submit handler and the retry-icon
   // click so both paths update the same pending bubble the same way.
-  async function attemptSend(pendingId, body, files, tagged, bookingId, myRole, postPath, attachmentBase) {
+  async function attemptSend(pendingId, body, files, tagged, bookingId, myRole, postPath, attachmentBase, replyToMessageId) {
     var formData = new FormData();
     formData.append('body', body);
     files.forEach(function (entry) { formData.append('attachments', entry.file); });
     if (tagged.length) {
       formData.append('taggedFiles', JSON.stringify(tagged.map(function (t) { return { id: t.fileId, source: t.source }; })));
     }
+    if (replyToMessageId) formData.append('replyToMessageId', replyToMessageId);
 
     var upload = postWithProgress(postPath, formData, function (fraction) { setPendingProgress(pendingId, fraction); });
     pendingUploads[pendingId] = upload.xhr;
@@ -249,7 +441,7 @@
     // the only place to recover a failed/cancelled message from — both cases get the retry icon.
     if (cancelled || !res.ok) {
       if (!cancelled && typeof showToast === 'function') showToast('Message not sent', 'Please try again.', 'error');
-      markPendingFailed(pendingId, body, files, tagged);
+      markPendingFailed(pendingId, body, files, tagged, replyToMessageId);
       return false;
     }
     removePendingRow(pendingId);
@@ -409,7 +601,101 @@
   }
 
   // ── File viewer (opened by clicking an uploaded file's thumbnail in chat) ──
+  // Zoom/pan are both driven by a single CSS transform (translate + scale) on the img itself,
+  // relative to its normal fit-to-container size — not by resizing width/height or relying on
+  // native scrollLeft/scrollTop, which only has room to move on whichever axis happens to
+  // overflow for a given image's aspect ratio and produces a discontinuous jump on the first zoom step.
   var viewerState = { list: [], index: 0 };
+  var viewerZoom = 1; // 1 = fit-to-container, scales up from there
+  var viewerPanX = 0, viewerPanY = 0; // px offset at the current zoom level
+  var VIEWER_MIN_ZOOM = 1;
+  var VIEWER_MAX_ZOOM = 4;
+  var VIEWER_CLICK_ZOOM = 2.5;
+
+  function applyViewerTransform() {
+    var img = document.querySelector('#viewer-player img');
+    if (!img) return;
+    img.style.transform = 'translate(' + viewerPanX + 'px, ' + viewerPanY + 'px) scale(' + viewerZoom + ')';
+  }
+
+  function setViewerZoomed(zoomed) {
+    var player = document.getElementById('viewer-player');
+    if (player) player.classList.toggle('zoomed', zoomed);
+  }
+
+  function resetViewerZoom() {
+    viewerZoom = 1;
+    viewerPanX = 0;
+    viewerPanY = 0;
+    setViewerZoomed(false);
+    applyViewerTransform();
+  }
+
+  function handleViewerWheel(e) {
+    e.preventDefault();
+    // Continuous, magnitude-proportional zoom (rather than a fixed step per tick) so it tracks
+    // the scroll gesture smoothly instead of jumping in fixed increments.
+    var factor = Math.exp(-e.deltaY * 0.001);
+    viewerZoom = Math.min(VIEWER_MAX_ZOOM, Math.max(VIEWER_MIN_ZOOM, viewerZoom * factor));
+    if (viewerZoom <= VIEWER_MIN_ZOOM) { viewerPanX = 0; viewerPanY = 0; }
+    setViewerZoomed(viewerZoom > VIEWER_MIN_ZOOM);
+    applyViewerTransform();
+  }
+
+  function handleViewerImageClick() {
+    if (viewerDidDrag) { viewerDidDrag = false; return; } // just finished a drag, not a tap-to-toggle
+    if (viewerZoom > VIEWER_MIN_ZOOM) {
+      resetViewerZoom();
+    } else {
+      viewerZoom = VIEWER_CLICK_ZOOM;
+      setViewerZoomed(true);
+      applyViewerTransform();
+    }
+  }
+
+  // ── Drag-to-pan once zoomed in — mousedown/touchstart is wired fresh onto each viewed image (see
+  // selectViewerFile), but move/end are registered once here since they just no-op via
+  // viewerDragState when nothing is being dragged, so there's no risk of them piling up. ──
+  var viewerDragState = null; // { x, y, panX, panY } while a drag is in progress
+  var viewerDidDrag = false; // set once a drag exceeds the click-tolerance, checked by handleViewerImageClick
+
+  function handleViewerDragStart(e) {
+    if (viewerZoom <= VIEWER_MIN_ZOOM) return;
+    var point = e.touches ? e.touches[0] : e;
+    viewerDragState = { x: point.clientX, y: point.clientY, panX: viewerPanX, panY: viewerPanY };
+    viewerDidDrag = false;
+    var player = document.getElementById('viewer-player');
+    if (player) player.classList.add('dragging');
+  }
+
+  function handleViewerDragMove(e) {
+    if (!viewerDragState) return;
+    // Defends against a missed mouseup (e.g. the button was released outside the window) leaving
+    // viewerDragState stuck "armed", which would otherwise pan on every subsequent mouse move even
+    // without the button held down.
+    if (!e.touches && e.buttons === 0) { handleViewerDragEnd(); return; }
+    var point = e.touches ? e.touches[0] : e;
+    var dx = point.clientX - viewerDragState.x, dy = point.clientY - viewerDragState.y;
+    // Require a deliberate grab-and-move past a small dead zone before panning actually engages,
+    // so trivial cursor jitter during a click doesn't nudge the image.
+    if (!viewerDidDrag && Math.abs(dx) <= 4 && Math.abs(dy) <= 4) return;
+    viewerDidDrag = true;
+    viewerPanX = viewerDragState.panX + dx;
+    viewerPanY = viewerDragState.panY + dy;
+    applyViewerTransform();
+    if (e.cancelable) e.preventDefault();
+  }
+
+  function handleViewerDragEnd() {
+    var player = document.getElementById('viewer-player');
+    if (player) player.classList.remove('dragging');
+    viewerDragState = null;
+  }
+
+  document.addEventListener('mousemove', handleViewerDragMove);
+  document.addEventListener('mouseup', handleViewerDragEnd);
+  document.addEventListener('touchmove', handleViewerDragMove, { passive: false });
+  document.addEventListener('touchend', handleViewerDragEnd);
 
   function viewerFileType(mimetype) {
     if (/^video\//i.test(mimetype)) return 'video';
@@ -463,10 +749,24 @@
     } else if (type === 'audio') {
       player.innerHTML = '<audio controls style="width:300px;"><source src="' + f.url + '" type="' + f.mimetype + '"></audio>';
     } else if (type === 'image') {
-      player.innerHTML = '<img src="' + f.url + '" alt="" />';
+      // draggable="false" stops the browser's native image drag-ghost from kicking in alongside
+      // our own mousedown/mousemove pan handling below — without it, dragging the image produces
+      // both our pan AND a floating native drag-preview thumbnail at the same time.
+      player.innerHTML = '<img src="' + f.url + '" alt="" draggable="false" />';
+      var viewerImgEl = player.querySelector('img');
+      viewerImgEl.addEventListener('click', handleViewerImageClick);
+      viewerImgEl.addEventListener('dragstart', function (e) { e.preventDefault(); });
+      viewerImgEl.addEventListener('mousedown', handleViewerDragStart);
+      viewerImgEl.addEventListener('touchstart', handleViewerDragStart, { passive: true });
+      // player itself persists across file switches (only its innerHTML is replaced), so drop any
+      // previous listener first — otherwise each viewed image stacks another one and a single
+      // wheel tick would zoom by multiple steps at once.
+      player.removeEventListener('wheel', handleViewerWheel);
+      player.addEventListener('wheel', handleViewerWheel, { passive: false });
     } else {
       player.innerHTML = '<iconify-icon icon="material-symbols-light:attach-file" width="44" height="44" style="color:#4b5563;"></iconify-icon>';
     }
+    resetViewerZoom();
 
     document.getElementById('viewer-filename').textContent = f.originalName;
 
@@ -636,10 +936,14 @@
     updateThreadRow(bookingId, m, myRole);
     if (!list || list.querySelector('[data-message-id="' + m._id + '"]')) return;
     var isMine = m.senderRole === myRole;
+    var atts = messageAttachments(m);
+    var attachmentSummary = atts.length ? (atts.length === 1 ? atts[0].originalName : atts.length + ' files') : '';
     var row = document.createElement('div');
     row.className = 'bubble-row ' + (isMine ? 'mine' : 'theirs');
     row.dataset.messageId = m._id;
-    var attachmentHtml = messageAttachments(m).map(function (a) {
+    row.dataset.replyBody = m.body || '';
+    row.dataset.replyAttachment = attachmentSummary;
+    var attachmentHtml = atts.map(function (a) {
       var isTagged = a.folder && a.folder !== 'chat';
       return isTagged ? taggedInlineBadgeHtml(a, attachmentBase, isMine) : attachmentBadgeHtml(a, attachmentBase, isMine);
     }).join('');
@@ -648,17 +952,33 @@
       ? '<iconify-icon icon="' + (m.read ? 'material-symbols:done-all' : 'material-symbols:check') + '" width="15" height="15" class="tick ' + (m.read ? 'tick-read' : '') + '"></iconify-icon>'
       : '';
     var spacerHtml = m.body ? '<span class="time-spacer ' + (showTick ? 'with-tick' : '') + '"></span>' : '';
-    var deleteBtnHtml = (m.senderRole === myRole && !m.deleted)
-      ? '<button type="button" class="msg-delete-btn" onclick="window.deleteMessage(\'' + m._id + '\')" title="Delete message">' +
-        '<iconify-icon icon="material-symbols-light:delete-outline" width="20" height="20"></iconify-icon></button>'
+    var composerEl = document.getElementById('composer');
+    var bookingName = composerEl ? composerEl.dataset.bookingName : '';
+    var replyQuoteHtml = (m.replyTo && m.replyTo.messageId)
+      ? '<div class="reply-quote" onclick="window.scrollToMessage(\'' + m.replyTo.messageId + '\')">' +
+        '<span class="reply-quote-sender">' + escapeHtml(replyLabelJs(m.replyTo.senderRole, myRole, bookingName)) + '</span>' +
+        '<span class="reply-quote-text">' + escapeHtml(m.replyTo.body || (m.replyTo.attachmentSummary ? '📎 ' + m.replyTo.attachmentSummary : '')) + '</span></div>'
       : '';
+    var radioHtml = '<button type="button" class="msg-select-radio" onclick="window.selectMessage(\'' + m._id + '\')" title="Select">' +
+      '<iconify-icon icon="material-symbols-light:circle-outline" width="20" height="20"></iconify-icon></button>';
+    var actionsHtml = '<div class="bubble-actions">' +
+      (isMine ? '<button type="button" class="bubble-action-btn" onclick="window.deleteMessage(\'' + m._id + '\')" title="Delete message">' +
+        '<iconify-icon icon="material-symbols-light:delete-outline" width="18" height="18"></iconify-icon></button>' +
+        '<button type="button" class="bubble-action-btn edit-action-btn" onclick="window.editMessage(\'' + m._id + '\')" title="Edit">' +
+        '<iconify-icon icon="material-symbols-light:edit-rounded" width="18" height="18"></iconify-icon></button>' : '') +
+      '<button type="button" class="bubble-action-btn reply-action-btn" onclick="window.replyToMessage(\'' + m._id + '\')" title="Reply">' +
+        '<iconify-icon icon="material-symbols-light:arrow-top-left" width="18" height="18"></iconify-icon></button></div>';
+    var editedLabelHtml = m.edited ? '<span class="edited-label">edited</span>' : '';
+    var bodyHtml = m.body ? '<span class="bubble-body-text">' + escapeHtml(m.body) + '</span>' : '';
     row.innerHTML =
-      deleteBtnHtml +
+      (isMine ? actionsHtml : radioHtml) +
       '<div class="bubble-col"><div class="bubble">' +
+        replyQuoteHtml +
         attachmentHtml +
-        escapeHtml(m.body || '') + spacerHtml +
-        '<span class="bubble-time ' + (m.body ? 'corner' : 'block') + '"><span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</span>' +
-      '</div></div>';
+        bodyHtml + spacerHtml +
+        '<span class="bubble-time ' + (m.body ? 'corner' : 'block') + '">' + editedLabelHtml + '<span class="bubble-time-text">' + timeLabel(m.createdAt) + '</span>' + tickHtml + '</span>' +
+      '</div></div>' +
+      (isMine ? radioHtml : actionsHtml);
     maybeInsertDaySeparator(list, new Date(m.createdAt));
     list.appendChild(row);
     scrollToBottom();
@@ -674,7 +994,7 @@
     return inner + progressRingHtml(pendingId);
   }
 
-  function renderPendingRow(pendingId, body, thumbs, bookingId) {
+  function renderPendingRow(pendingId, body, thumbs, bookingId, replyInfo) {
     var list = document.getElementById('message-list');
     if (!list) return;
     var row = document.createElement('div');
@@ -685,11 +1005,17 @@
       return '<span class="attachment-badge"><span class="badge-thumb badge-thumb-preview' + (/^audio\//i.test(t.mimetype) ? ' badge-thumb-audio' : '') + '">' +
         pendingThumbHtml(t.mimetype, t.url, pendingId) + '</span></span>';
     }).join('');
+    var replyQuoteHtml = replyInfo
+      ? '<div class="reply-quote"><span class="reply-quote-sender">' + escapeHtml(replyInfo.senderLabel) + '</span>' +
+        '<span class="reply-quote-text">' + escapeHtml(replyInfo.body || (replyInfo.attachment ? '📎 ' + replyInfo.attachment : '')) + '</span></div>'
+      : '';
     var spacerHtml = body ? '<span class="time-spacer"></span>' : '';
+    var bodyHtml = body ? '<span class="bubble-body-text">' + escapeHtml(body) + '</span>' : '';
     row.innerHTML =
       '<div class="bubble-col"><div class="bubble">' +
+        replyQuoteHtml +
         attachmentHtml +
-        escapeHtml(body || '') + spacerHtml +
+        bodyHtml + spacerHtml +
         '<span class="bubble-time ' + (body ? 'corner' : 'block') + '"><span class="bubble-time-text">Sending…</span></span>' +
       '</div></div>';
     maybeInsertDaySeparator(list, new Date());
@@ -706,8 +1032,11 @@
     var row = document.querySelector('.bubble-row[data-message-id="' + messageId + '"]');
     if (!row || row.classList.contains('deleted')) return;
     row.classList.add('deleted');
-    var delBtn = row.querySelector('.msg-delete-btn');
-    if (delBtn) delBtn.remove();
+    if (selectedMessageIds.has(messageId)) { selectedMessageIds.delete(messageId); refreshSelectionModeClasses(); }
+    var radio = row.querySelector('.msg-select-radio');
+    if (radio) radio.remove();
+    var actions = row.querySelector('.bubble-actions');
+    if (actions) actions.remove();
     var bubble = row.querySelector('.bubble');
     if (!bubble) return;
     var showTick = row.classList.contains('mine');
@@ -787,6 +1116,13 @@
     if (currentSocket) { currentSocket.disconnect(); currentSocket = null; }
     scrollToBottom();
 
+    // A thread switch replaces the whole panel (see openThread), so any selection/reply/edit state
+    // from the previous thread refers to DOM nodes that no longer exist — drop it.
+    selectedMessageIds.clear();
+    cancelLongPress();
+    clearReplyState();
+    clearEditState();
+
     var composer = document.getElementById('composer');
     if (!composer) return;
     var myRole = composer.dataset.myRole;
@@ -799,6 +1135,7 @@
       if (typeof m.chatBlocked === 'boolean') applyChatBlockedState(m.chatBlocked);
     });
     currentSocket.on('message-deleted', function (data) { applyMessageDeleted(data.messageId); });
+    currentSocket.on('message-edited', function (data) { applyMessageEdited(data.messageId, data.body); });
 
     var bodyInput = document.getElementById('body-input');
     var attachmentInput = document.getElementById('attachment-input');
@@ -808,6 +1145,30 @@
     var attachModalClose = document.getElementById('attach-modal-close');
     var attachModalDone = document.getElementById('attach-modal-done');
     var browseFilesBtn = document.getElementById('browse-files-btn');
+    var replyPreviewClose = document.getElementById('reply-preview-close');
+    var editPreviewClose = document.getElementById('edit-preview-close');
+
+    replyPreviewClose?.addEventListener('click', clearReplyState);
+    editPreviewClose?.addEventListener('click', function () {
+      clearEditState();
+      if (bodyInput) bodyInput.value = '';
+    });
+
+    var messageList = document.getElementById('message-list');
+    if (messageList) {
+      messageList.addEventListener('mousedown', handleLongPressStart);
+      messageList.addEventListener('touchstart', handleLongPressStart, { passive: true });
+      messageList.addEventListener('mousemove', handleLongPressMove);
+      messageList.addEventListener('touchmove', handleLongPressMove, { passive: true });
+      messageList.addEventListener('mouseup', cancelLongPress);
+      messageList.addEventListener('mouseleave', cancelLongPress);
+      messageList.addEventListener('touchend', cancelLongPress);
+      messageList.addEventListener('touchcancel', cancelLongPress);
+      messageList.addEventListener('contextmenu', function (e) { if (selectedMessageIds.size || longPressTimer) e.preventDefault(); });
+      messageList.addEventListener('click', function (e) {
+        if (selectedMessageIds.size && !e.target.closest('.bubble-row')) exitSelectionMode();
+      });
+    }
 
     var pendingFiles = []; // [{ file, url }] — freshly browsed local files
     var pendingTagged = []; // [{ fileId, source, originalName, mimetype, thumbUrl }] — tagged project files
@@ -941,19 +1302,49 @@
     composer.addEventListener('submit', async function (e) {
       e.preventDefault();
       var body = bodyInput.value.trim();
+
+      if (editState) {
+        if (!body) return;
+        var editingId = editState.messageId;
+        var submitBtn = composer.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        try {
+          var editRes = await fetch(postPath + '/' + editingId + '/edit', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ body: body }),
+          });
+          if (!editRes.ok) {
+            var errData = await editRes.json().catch(function () { return {}; });
+            if (typeof showToast === 'function') showToast('Could not save edit', errData.error || 'Please try again.', 'error');
+            return;
+          }
+          applyMessageEdited(editingId, body);
+          clearEditState();
+          bodyInput.value = '';
+        } catch (err) {
+          if (typeof showToast === 'function') showToast('Could not save edit', 'Please try again.', 'error');
+        } finally {
+          if (submitBtn) submitBtn.disabled = false;
+        }
+        return;
+      }
+
       if (!body && pendingFiles.length === 0 && pendingTagged.length === 0) return;
 
       var pendingId = 'pending-' + Date.now() + '-' + Math.random().toString(36).slice(2);
       var pendingThumbs = pendingFiles.map(function (entry) { return { mimetype: entry.file.type, url: entry.url }; })
         .concat(pendingTagged.map(function (entry) { return { mimetype: entry.mimetype, url: entry.thumbUrl }; }));
-      renderPendingRow(pendingId, body, pendingThumbs, bookingId);
+      var replyToMessageId = replyState ? replyState.messageId : null;
+      renderPendingRow(pendingId, body, pendingThumbs, bookingId, replyState);
 
       var sendFiles = pendingFiles.slice();
       var sendTagged = pendingTagged.slice();
       bodyInput.value = '';
       resetComposerAttachments();
+      clearReplyState();
 
-      attemptSend(pendingId, body, sendFiles, sendTagged, bookingId, myRole, postPath, attachmentBase);
+      attemptSend(pendingId, body, sendFiles, sendTagged, bookingId, myRole, postPath, attachmentBase, replyToMessageId);
     });
 
     bodyInput.addEventListener('keydown', function (e) {
@@ -1001,6 +1392,7 @@
     }
     var viewer = document.getElementById('file-viewer-modal');
     if (viewer && !viewer.classList.contains('hidden')) window.closeFileViewer();
+    if (selectedMessageIds.size) exitSelectionMode();
   });
 
   window.addEventListener('popstate', function () {

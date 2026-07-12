@@ -29,7 +29,7 @@
 | `POST /dashboard/booking/:id/pause` | — | Client pauses their project (`status: "paused"`); emails admin via `sendAdminPauseAlert`; blocked once already declined/completed/paused/archived |
 | `POST /dashboard/booking/:id/nudge` | — | Client asks for an update; creates an `AdminNotification` (`type: "nudge"`) instead of emailing; rate-limited to 3 per booking per rolling hour (`429` JSON error past that) |
 | `POST /dashboard/booking/:id/delete` | — | Client hard-delete: permanently removes the booking's raw uploads and chat attachments via `hardDeleteBookingFiles()`/`archiveAndWipeBookingFiles()`, clears `uploadedFiles`, sets `filesDeleted: true` and `archived: true` (also moves the booking folder into `uploads/_archive/`); DB row, `booking.txt`, and any delivered **`deliverableFiles`** are kept — only client-submitted content is wiped |
-| `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects, sortable newest/oldest |
+| `/dashboard/gallery` | File Gallery | Browse uploaded files across all of the client's projects — per-project card grid by default, or a flat file-grid view scoped to one type (video/audio/image/other) via a filter dropdown (replaced the old pill-button row; sort-by-oldest removed) |
 | `GET /dashboard/uploads/:filename` | — | Protected file serving for the owning client only |
 | `GET /dashboard/deliverables/:filename` | — | Final deliverable download for the owning client only, gated on `status === "completed"` |
 | `/dashboard/notifications` | Notifications | In-app alerts (status changes, invoices sent, payments confirmed, project dismissed); marks all read on view |
@@ -42,6 +42,7 @@
 | `POST /dashboard/messages/:id` | — | Send a chat message; up to 10 attachments and/or tagged existing project files per message; broadcasts `new-message` to the booking's socket room; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /dashboard/messages/attachments/:filename` | — | Owning-client-only chat attachment download/view |
 | `POST /dashboard/messages/:id/:messageId/delete` | — | Soft-delete a message the client sent (clears body/attachments, tombstones the row); tagged project-file references are left untouched on disk |
+| `POST /dashboard/messages/:id/:messageId/edit` | — | Edit the text body of a message the client sent (text-only, no attachment edit); sets `edited: true`, broadcasts `message-edited` to the socket room |
 
 ## Editor / Associate Portal (individual associate login required)
 
@@ -92,6 +93,7 @@ Separate from both client accounts and the shared-password admin login — edito
 | `POST /admin/booking/:id/messages` | — | Send a chat message; up to 10 attachments and/or tagged existing project files (`uploadedFiles`/unlocked `deliverableFiles`) per message; 403s if the booking isn't `chatUnlocked` yet |
 | `GET /admin/messages/attachments/:filename` | — | Admin-only chat attachment download/view |
 | `POST /admin/booking/:id/messages/:messageId/delete` | — | Soft-delete a message admin sent |
+| `POST /admin/booking/:id/messages/:messageId/edit` | — | Edit the text body of a message admin sent (text-only, no attachment edit); sets `edited: true`, broadcasts `message-edited` to the socket room; same edit endpoint also exists at `/associate/booking/:id/messages/:messageId/edit`, scoped to the assigned associate |
 | `POST /admin/booking/:id/chat-block` / `POST /admin/booking/:id/chat-unblock` | — | Mutes/unmutes the client on this project's chat (`chatBlocked`) — client keeps read access but can't send; independent of `chatUnlocked`; JSON response, triggered via `fetch()` from inside the chat panel |
 | `POST /webhooks/stripe` | — | Stripe webhook (raw body, signature-verified) — advances `depositStatus`/`finalPaymentStatus`/matching `revisionInvoices[].status` on `invoice.payment_succeeded`; deposit payment no longer auto-flips `status` (admin confirms manually, prompted by a `payment` `AdminNotification`); final payment still flips `status` to `completed`; notifies client + admin |
 
@@ -104,6 +106,8 @@ Chat is gated behind the `chatUnlocked` virtual on `BookingRequest` (`accepted`/
 Separately, `chatBlocked` is an admin-only mute on top of that gate — the client keeps read access to a thread but their send route 403s until an admin unblocks them (`chat-block`/`chat-unblock`, above). The client composer shows a persistent banner (not just a placeholder) when blocked, and the admin thread header shows a "Client blocked" badge + toggle button. The client's composer reconciles this state live off the `chatBlocked` flag riding along on every `new-message` socket event (there's no dedicated push for a mute toggle), rather than only reading it once at page load.
 
 A booking's first-ever message inserts a new row into both sidebars live (matching server-rendered markup) instead of requiring a reload — the inbox list only ever queries bookings with at least one `Message`, so a brand-new thread has no row to begin with.
+
+A message can be replied-to (long-press or the bubble's reply action selects it, composer shows a reply-preview bar, sent message carries a `replyTo` snapshot — messageId/senderRole/body/attachmentSummary frozen at send time so a later edit or delete of the original doesn't retroactively change what the reply quote shows) and edited (own messages only, text-only — the composer switches into an edit mode with attachment-picking disabled, `PATCH`-style `.../messages/:messageId/edit` sets `edited: true` and broadcasts `message-edited`). Both reply and edit share the same long-press/tap selection-mode UI as delete; the reply/edit actions hide once more than one message is selected, since both only make sense against a single message.
 
 Attachments the receiving party hasn't fetched yet ("lazy" — image/video, not the sender's own, not already `downloaded`) show a tap-to-download icon instead of loading eagerly. If a booking's files have been permanently deleted (`filesDeleted`, see the client-delete route above), that lazy state is skipped entirely — every attachment (any type, tagged or not) renders straight into a non-interactive "This file is no longer available" placeholder, since a download would only ever fail. The same placeholder also covers the general case of an individual file that fails to load for any other reason (`onerror` on the `<img>`/`<video>`), including neutralizing the enclosing link so it doesn't still try to open a file viewer or download.
 

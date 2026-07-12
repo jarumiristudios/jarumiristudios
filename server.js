@@ -1914,6 +1914,18 @@ app.post("/admin/booking/:id/messages/:messageId/delete", requireAdmin, async (r
   res.json({ ok: true });
 });
 
+app.post("/admin/booking/:id/messages/:messageId/edit", requireAdmin, async (req, res) => {
+  const body = (req.body.body || "").trim();
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: req.params.id, senderRole: "admin", deleted: false });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  if (!body && messageAttachments(message).length === 0) return res.status(400).json({ error: "Message can't be empty." });
+  message.body = body;
+  message.edited = true;
+  await message.save();
+  io.to(chatRoom(req.params.id)).emit("message-edited", { messageId: message._id, bookingId: req.params.id, body: message.body });
+  res.json({ message });
+});
+
 // Mutes the client on this project's chat — they keep read access to the thread but can't send.
 // Independent of chatUnlocked (project-phase gating): the admin can block regardless of status.
 // JSON response (not a redirect) since this is triggered from within the chat panel via fetch,
@@ -2977,6 +2989,18 @@ app.post("/associate/booking/:id/messages/:messageId/delete", requireAssociate, 
   res.json({ ok: true });
 });
 
+app.post("/associate/booking/:id/messages/:messageId/edit", requireAssociate, requireAssignedBooking, async (req, res) => {
+  const body = (req.body.body || "").trim();
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: req.params.id, senderRole: "admin", deleted: false });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  if (!body && messageAttachments(message).length === 0) return res.status(400).json({ error: "Message can't be empty." });
+  message.body = body;
+  message.edited = true;
+  await message.save();
+  io.to(chatRoom(req.params.id)).emit("message-edited", { messageId: message._id, bookingId: req.params.id, body: message.body });
+  res.json({ message });
+});
+
 // Mutes the client on this project's chat — same as the admin toggle, scoped to the associate's
 // own assigned booking (see requireAssignedBooking).
 app.post("/associate/booking/:id/chat-block", requireAssociate, requireAssignedBooking, async (req, res) => {
@@ -3152,6 +3176,20 @@ app.post("/dashboard/messages/:id/:messageId/delete", requireClient, async (req,
   await softDeleteMessage(message);
   io.to(chatRoom(req.params.id)).emit("message-deleted", { messageId: message._id, bookingId: req.params.id });
   res.json({ ok: true });
+});
+
+app.post("/dashboard/messages/:id/:messageId/edit", requireClient, async (req, res) => {
+  const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId }).select("_id");
+  if (!booking) return res.status(404).json({ error: "Project not found." });
+  const body = (req.body.body || "").trim();
+  const message = await Message.findOne({ _id: req.params.messageId, bookingId: booking._id, senderRole: "client", deleted: false });
+  if (!message) return res.status(404).json({ error: "Message not found." });
+  if (!body && messageAttachments(message).length === 0) return res.status(400).json({ error: "Message can't be empty." });
+  message.body = body;
+  message.edited = true;
+  await message.save();
+  io.to(chatRoom(req.params.id)).emit("message-edited", { messageId: message._id, bookingId: req.params.id, body: message.body });
+  res.json({ message });
 });
 
 app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, res) => {
