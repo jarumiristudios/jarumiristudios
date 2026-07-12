@@ -314,6 +314,33 @@ mongoose
 // File upload (multer) — fileTypeFromMime/uniqueFilename live in lib/uploadUtils.js now,
 // shared with lib/r2MulterStorage.js.
 
+// Local-disk-only concern: chat attachments and deliverables both share one DB `folder` value
+// ("chat"/"deliverables") regardless of who sent them, which used to dump every sender's
+// uploads into a single shared directory. R2 doesn't care (folder is metadata there, never part
+// of the object key) — this only changes where the bytes physically land on disk, split by
+// whichever specific account sent/uploaded them: the client, the one shared admin login (no
+// per-account id of its own), or a specific associate account (models/Associate.js).
+function staffDiskFolder(associateId) {
+  return associateId ? `associate-${associateId}` : "admin";
+}
+function chatDiskFolder(senderRole, senderAssociateId) {
+  return senderRole === "client" ? "chat/client" : `chat/${staffDiskFolder(senderAssociateId)}`;
+}
+function deliverableDiskFolder(uploadedByAssociateId) {
+  return `deliverables/${staffDiskFolder(uploadedByAssociateId)}`;
+}
+// Resolves the actual on-disk subfolder for an attachment: chat and deliverable attachments get
+// the sender-split paths above, everything else (tagged project files) keeps its own `folder`
+// as-is. senderRole/senderAssociateId are the parent Message's — irrelevant for a tagged
+// deliverable reference, which carries its own uploadedByAssociateId instead (see
+// resolveTaggedAttachment).
+function diskFolderFor(att, senderRole, senderAssociateId) {
+  const folder = att.folder || "chat";
+  if (folder === "chat") return chatDiskFolder(senderRole, senderAssociateId);
+  if (folder === "deliverables") return deliverableDiskFolder(att.uploadedByAssociateId);
+  return folder;
+}
+
 // Serves a stored file's bytes given its Mongo metadata subdoc: a presigned redirect for the
 // R2 backend, or the legacy on-disk lookup (active path, then _archive) for files not yet
 // migrated. `fileDoc` is the uploadedFiles/deliverableFiles/attachment subdocument itself.
@@ -609,8 +636,9 @@ async function softDeleteMessage(message) {
       await deleteObject(a.storageKey).catch((err) => console.error("R2 delete error:", err.message));
       return;
     }
-    fs.rm(path.join(__dirname, "uploads", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
-    fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", "chat", a.storedName), { force: true }, () => {});
+    const chatFolder = chatDiskFolder(message.senderRole, message.senderAssociateId);
+    fs.rm(path.join(__dirname, "uploads", message.crCode, "files", chatFolder, a.storedName), { force: true }, () => {});
+    fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", chatFolder, a.storedName), { force: true }, () => {});
   }));
   message.deleted = true;
   message.body = "";
@@ -651,6 +679,9 @@ function resolveTaggedAttachment(booking, source, fileId, isClient) {
     mimetype: file.mimetype,
     blurDataUrl: file.blurDataUrl,
     folder,
+    // Carried forward so diskFolderFor can resolve this reference's on-disk path — only
+    // populated when tagging an existing deliverable, undefined (and unused) otherwise.
+    uploadedByAssociateId: arrayName === "deliverableFiles" ? file.uploadedByAssociateId : undefined,
   };
 }
 
@@ -809,9 +840,10 @@ const upload = multer({
   limits: { fileSize: MEMBER_MAX_FILE_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
-// Admin-uploaded final deliverables — separate multer instance so they never mix with client-submitted raw files
+// Admin-uploaded final deliverables — separate multer instance so they never mix with client-submitted raw files.
+// Local disk only: split by uploader the same way deliverableDiskFolder() splits it on read.
 const deliverableUpload = multer({
-  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, () => "deliverables") : createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, (req) => deliverableDiskFolder(req.session?.associateId)) : createR2Storage(),
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
   fileFilter: rejectDangerousFiles,
 });
@@ -820,8 +852,12 @@ const deliverableUpload = multer({
 // main upload system above is for), so a smaller cap than member uploads.
 const CHAT_ATTACHMENT_MAX_SIZE = 1024 * 1024 * 1024; // 1 GB
 const CHAT_MAX_ATTACHMENTS = 10;
+// Local disk only: mirrors the same split chatDiskFolder() uses when reading a chat attachment
+// back — req.session.userId is only ever set for a client session (admin/associate sessions use
+// isAdmin/associateId instead), matching how Message.senderRole/senderAssociateId end up set
+// for the message this file attaches to.
 const chatUpload = multer({
-  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, () => "chat") : createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, (req) => chatDiskFolder(req.session?.userId ? "client" : "admin", req.session?.associateId)) : createR2Storage(),
   limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
@@ -2029,7 +2065,7 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, att.folder || "chat", filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -2049,7 +2085,7 @@ app.post("/admin/messages/attachments/:filename/save-to-project", requireAdmin, 
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
   const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
+  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -2170,8 +2206,9 @@ app.post("/admin/booking/:id/deliverables/:fileId/delete", requireAdmin, async (
       if (file.backend === "r2") {
         await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
       } else {
-        fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
-        fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+        const deliverableFolder = deliverableDiskFolder(file.uploadedByAssociateId);
+        fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", deliverableFolder, file.storedName), { force: true }, () => {});
+        fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", deliverableFolder, file.storedName), { force: true }, () => {});
       }
       booking.deliverableFiles.pull(req.params.fileId);
       await booking.save();
@@ -2585,7 +2622,7 @@ app.get("/admin/uploads/:filename", requireAdmin, async (req, res) => {
   if (booking) {
     const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
     const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
-    const folder = fileDoc.folder || (uploadedMatch ? fileTypeFromMime(fileDoc.mimetype) : "deliverables");
+    const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder(fileDoc.uploadedByAssociateId);
     if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
   }
   res.sendFile(path.join(__dirname, "uploads", filename));
@@ -2822,6 +2859,7 @@ app.post("/associate/booking/:id/deliverables", requireAssociate, requireAssigne
     size: f.size,
     mimetype: f.mimetype,
     folder: "deliverables",
+    uploadedByAssociateId: req.session.associateId,
     storageKey: f.storageKey,
     backend: f.backend,
     blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
@@ -2853,7 +2891,7 @@ app.post("/associate/booking/:id/deliverables/:fileId/delete", requireAssociate,
     if (file.backend === "r2") {
       await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
     } else {
-      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", "deliverables", file.storedName), { force: true }, () => {});
+      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", deliverableDiskFolder(file.uploadedByAssociateId), file.storedName), { force: true }, () => {});
     }
     booking.deliverableFiles.pull(req.params.fileId);
     await booking.save();
@@ -3062,6 +3100,7 @@ app.post("/associate/booking/:id/messages", requireAssociate, requireAssignedBoo
     crCode: booking.crCode,
     clientId: booking.clientId,
     senderRole: "admin",
+    senderAssociateId: req.session.associateId,
     body,
     attachments,
     replyTo,
@@ -3122,7 +3161,7 @@ app.post("/associate/messages/attachments/:filename/save-to-project", requireAss
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
   const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
+  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -3148,7 +3187,7 @@ app.get("/associate/messages/attachments/:filename", requireAssociate, async (re
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, att.folder || "chat", filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -3161,7 +3200,7 @@ app.get("/associate/uploads/:filename", requireAssociate, async (req, res) => {
   if (!booking) return res.sendStatus(404);
   const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
   const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
-  const folder = fileDoc.folder || (uploadedMatch ? fileTypeFromMime(fileDoc.mimetype) : "deliverables");
+  const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder(fileDoc.uploadedByAssociateId);
   if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
   res.sendStatus(404);
 });
@@ -3304,7 +3343,7 @@ app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, 
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, folder, filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -3325,7 +3364,7 @@ app.post("/dashboard/messages/attachments/:filename/save-to-project", requireCli
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
   const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, "chat", type, filename, att)) {
+  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -3395,7 +3434,7 @@ app.get("/dashboard/deliverables/:filename", requireClient, async (req, res) => 
   });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
   const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
-  if (await redirectToStoredFile(res, booking.crCode, "deliverables", filename, fileInfo)) return;
+  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(fileInfo.uploadedByAssociateId), filename, fileInfo)) return;
   res.sendStatus(404);
 });
 
@@ -3405,7 +3444,7 @@ app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
   const booking = await BookingRequest.findOne({ crCode, "deliverableFiles.storedName": filename });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
   const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
-  if (await redirectToStoredFile(res, booking.crCode, "deliverables", filename, fileInfo)) return;
+  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(fileInfo.uploadedByAssociateId), filename, fileInfo)) return;
   res.sendStatus(404);
 });
 

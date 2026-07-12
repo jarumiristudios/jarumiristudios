@@ -15,6 +15,10 @@ const messageSchema = new mongoose.Schema(
     crCode: { type: String, required: true },
     clientId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     senderRole: { type: String, enum: ["admin", "client"], required: true },
+    // Which specific associate account sent this (senderRole "admin" covers both the one
+    // shared admin login and every associate — they're otherwise indistinguishable). Null for
+    // the shared admin login and for client messages.
+    senderAssociateId: { type: mongoose.Schema.Types.ObjectId, ref: "Associate", default: null },
     body: { type: String, trim: true, maxlength: 4000, default: "" },
     // Legacy single-attachment shape, kept so messages sent before multi-attachment
     // support still render — new messages are always written to `attachments` below.
