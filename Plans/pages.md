@@ -56,8 +56,11 @@ Separate from both client accounts and the shared-password admin login — edito
 | `/associate/booking/:id` | Booking Detail | Same shape as `admin/booking.ejs`, scoped to one assigned booking — status changes, deliverable upload/delete, deposit/final/revision Stripe invoices, delivery date, revision-reviewed toggle, chat (send/delete/mute) |
 | `/associate/messages` / `/associate/messages/archived` | Messages Inbox | List of this editor's assigned-project threads with at least one message; same search/filter/live-insert behavior as the admin and client inboxes |
 | `/associate/messages/:id` | Project Thread | Full-featured chat panel (lazy attachments, tagging, retry — same as admin/client), AJAX partial on `X-Requested-With` |
-| `GET /api/associate/messages/poll` | — | 15s poll for a live unread badge + new-message toasts, scoped to this associate's assigned bookings |
+| `GET /api/associate/messages/poll` | — | 15s poll for a live unread badge + new-message toasts, scoped to this associate's own assigned bookings plus any unassigned-but-chat-unlocked booking (tagged `unclaimed: true`) so an unclaimed thread's messages aren't invisible to every editor |
 | `GET /associate/messages/attachments/:filename` / `GET /associate/uploads/:filename` | — | Associate-only file serving, scoped to assigned bookings |
+| `/associate/notifications` | Notifications | In-app alerts (`assignment`/`payment`/`files_added`) scoped to this associate; marks all read on view |
+| `GET /api/associate/notifications/poll` | — | 15s poll for a live unread badge + new items since a timestamp |
+| `POST /api/associate/notifications/mark-read` | — | Marks all associate notifications read (JSON response) |
 
 ## Admin (restricted to owner)
 

@@ -1,8 +1,53 @@
 # Journal
 
-## 2026-07-12 — Message Editing, Reply-Quote Bug Fix, Viewer Zoom/Pan (uncommitted, in progress)
+## 2026-07-12 — Unify Local/R2 Upload Folder Layout
 
-**What was built:** Follow-up polish on top of the reply-to feature shipped in `ddc8a10` (next entry below), none of it yet committed.
+**What was built:** Shipped in `e580943`. Both storage backends now share one folder shape: `<crCode>/{raws,finals,chats/clients,chats/associate}` — replacing R2's previously-flat `<crCode>/<storedName>` keys and local disk's differently-nested (`files/<type>/`, further split by staff identity per the commit below) layout. `raws` is client-submitted files (no more video/audio/image/other split), `finals` is delivered deliverables (no more per-staff split), and chat attachments now split only client-vs-staff (`chats/clients/` or `chats/associate/`, the latter shared by admin and every associate) rather than by individual account.
+
+- `createR2Storage`/`createLocalStorage` (`lib/r2MulterStorage.js`/`lib/localMulterStorage.js`) both take a `getFolder(req, file)` function now, resolving to the same four folders on either backend.
+- Since folder is now part of the R2 object key (previously DB-only metadata), "save chat attachment to project files" is no longer a no-op DB update — `moveStoredFile` (`server.js`) performs a real R2 copy+delete via a new `copyObject` (`lib/r2.js`).
+- `scripts/reorganize-r2-folders.js` (new) — dry-run-by-default migration to move existing R2 objects (and their DB `storageKey`) from the old flat scheme onto the new nested one, deduplicating by object key so a file referenced by both a `Message` attachment and a `BookingRequest` file entry is only copied once. **Not yet run against production** — validated against the local dev DB and a live R2 bucket in isolation, but production's actual database lives elsewhere and this local machine can't safely target it (see `Plans/july26-milestone.md`).
+- Every read/delete path resolves a file by its stored `storageKey` directly rather than recomputing it, so old flat-keyed docs keep working unchanged whether or not the migration script is ever run — this is a console-tidiness migration, not a functional requirement.
+
+**Decisions made:**
+- Chat attachments split client-vs-staff only, not per individual associate — the R2-console-tidiness goal doesn't need per-editor granularity, superseding the previous commit's per-associate-ID local split.
+- Migration script defaults to dry-run and wasn't executed here — production data lives on a separate Mongo instance this session can't see; running the real copy+delete against local dev records risked permanently breaking live download links for documents production's DB still references by the old key.
+
+---
+
+## 2026-07-12 — Fix Stray Empty-State Placeholder on First Chat Message
+
+**What was built:** Shipped in `bd2afb0`. `renderMessage()` appended a new bubble straight into `#message-list` without removing the server-rendered "No messages yet" placeholder — that placeholder is `h-full`, so it pushed a freshly-sent first message out of the visible chat flow (present in the DOM, just scrolled out of view). Fixed across all three thread-panel templates (client/admin/associate) by removing the placeholder the first time a message renders into the list.
+
+---
+
+## 2026-07-12 — Split Local Chat/Deliverable Storage by Uploader Identity
+
+**What was built:** Shipped in `ff9764c`. Local-disk uploads (`STORAGE_BACKEND=local`, see the entry below) were dumping every chat sender (client/admin/associate) and every deliverable uploader (admin/associate) into one shared folder each — harmless for R2, where folder was DB metadata only, but not representative of any real per-account separation. `Message.senderAssociateId` (new) and the shared file-metadata schema's `uploadedByAssociateId` now drive per-account subfolders under `uploads/<crCode>/files/{chat,deliverables}/<client|admin|associate-id>/`. R2 keys were untouched by this — folder is metadata there, never part of the object key (until the next commit changed that).
+
+**Decisions made:**
+- Scoped to local disk only — R2's flat-key/DB-metadata design at the time didn't need this, and the split was superseded by the next commit's shared-key-scheme change anyway.
+
+---
+
+## 2026-07-12 — Associate Notifications, Download-Tracking Fix, Local Dev Storage Backend
+
+**What was built:** Shipped in `e2a3f31`.
+
+- **`AssociateNotification` model** (`assignment`/`payment`/`files_added` types) + `/associate/notifications` page, `/api/associate/notifications/poll` (unread count + new items since a timestamp), `/api/associate/notifications/mark-read` — same pattern as the existing admin/client notification feeds. Fired on: a Stripe deposit/final payment landing on an assigned booking, a client adding files to an assigned booking (alongside the existing admin `files_added` alert), and being newly assigned/reassigned a project (`/admin/booking/:id/assign`).
+- **Unclaimed threads surfaced to every associate.** `unclaimedChatUnlockedBookingIds()` — a project nobody's claimed yet still has chat unlocked once accepted (purely status-based), so its unread client messages are now folded into every associate's unread-message poll/badge (`/api/associate/messages/poll`, the `/associate` `res.locals` middleware) alongside their own assigned bookings, tagged `unclaimed: true` so the UI can distinguish "yours" from "anyone's to grab."
+- **Fixed the file-viewer sidebar over-marking attachments "downloaded."** The viewer's sidebar grid (added in `a806f0f`, below) silently pre-fetches every project attachment as a thumbnail, which was hitting the same `/admin|associate|dashboard/messages/attachments/:filename` route the real download link uses — flipping `downloaded: true` on files nobody had actually opened. Both routes now only flip it when the request explicitly carries `?downloaded=1`, sent only by the real open/download links, not the sidebar's silent pre-fetch. The sidebar also now blurs not-yet-downloaded images/videos, matching the chat bubble's existing lazy-load treatment.
+- **`STORAGE_BACKEND=local` dev switch.** New `lib/localMulterStorage.js` (mirrors `r2MulterStorage`'s `_handleFile`/`_removeFile` callback shape) lets all four multer instances (`upload`/`deliverableUpload`/`chatUpload`/`applicationUpload`) write to local disk instead of R2 when the env var is set (in the gitignored `.env`) — avoids needing live R2 credentials or hitting R2's presigned-URL CORS restrictions during local dev. Never set in the deployed environment, so production is unaffected.
+
+**Decisions made:**
+- Unclaimed-thread visibility implemented as "fold into every associate's badge count," not a separate inbox section — keeps the existing poll/badge plumbing as the single source of truth for "do I need to look at something."
+- `downloaded` gated on an explicit query param rather than trying to distinguish request intent server-side some other way — cheap, and the sidebar was the only caller that needed to opt out.
+
+---
+
+## 2026-07-12 — Message Editing, Reply-Quote Bug Fix, Viewer Zoom/Pan
+
+**What was built:** Shipped in `a806f0f`. Follow-up polish on top of the reply-to feature shipped in `ddc8a10` (next entry below).
 
 - **Message editing.** `Message.edited` (boolean, new field). `POST .../messages/:messageId/edit` added on all three send surfaces (`/admin/booking/:id/messages/:messageId/edit`, `/associate/booking/:id/messages/:messageId/edit`, `/dashboard/messages/:id/:messageId/edit`) — sender-and-not-deleted only, text-only (rejects an empty body unless the message still carries an attachment), sets `body`/`edited: true`, broadcasts `message-edited` to the socket room. Client-side, `window.editMessage()` puts the composer into an edit mode (attachment picking disabled for the duration, since there's no attachment-edit endpoint) with an amber "Editing message" bar mirroring the existing reply-preview bar; submitting posts to the new edit route instead of sending a new message, and both the sender's own optimistic update and the `message-edited` socket event on the other party's screen go through the same `applyMessageEdited()` to patch the bubble's text and stamp an "edited" label next to the timestamp.
 - **Fixed a reply-quote bug from `ddc8a10`.** All three thread-panel templates guarded the reply-quote block on `if (m.replyTo)`, but Mongoose always hydrates a single-nested-schema path as an object (never `undefined`) on a non-`.lean()` document — so every message, reply or not, rendered as if it had a quote. Changed to check a real sub-field (`m.replyTo && m.replyTo.messageId`) in both the server-rendered EJS and the client-side `buildThreadRowHtml()`.
