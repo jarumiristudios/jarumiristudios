@@ -344,13 +344,18 @@
   messages.forEach(m => {
     if (m.deleted) return;
     const atts = (m.attachments && m.attachments.length) ? m.attachments : (m.attachment && m.attachment.storedName ? [m.attachment] : []);
+    const isMine = m.senderRole === myRole;
     atts.forEach(att => {
       if (viewerSeenStoredNames.has(att.storedName)) return;
       viewerSeenStoredNames.add(att.storedName);
       const isTagged = att.folder && att.folder !== 'chat';
+      const isImage = /^image\//i.test(att.mimetype);
+      const isVideo = /^video\//i.test(att.mimetype);
       viewerFiles.push({
         storedName: att.storedName, originalName: att.originalName, mimetype: att.mimetype, size: att.size,
         url: isTagged ? '/associate/uploads/' + att.storedName : attachmentBasePath + '/' + att.storedName,
+        lazy: !isTagged && !isMine && (isImage || isVideo) && !att.downloaded,
+        blurDataUrl: att.blurDataUrl || null,
       });
     });
   });

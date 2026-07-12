@@ -5,4 +5,5 @@ uploads/
 scripts/auto-commit.log
 scripts/migration-manifest.json
 server.log
+tw_watch.log
 Screenshot*.png

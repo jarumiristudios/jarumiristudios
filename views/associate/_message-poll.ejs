@@ -29,11 +29,18 @@
 
     if (typeof showToast === 'function') {
       elsewhere.forEach(function (m) {
-        showToast('New message', 'On ' + m.crCode + ': "' + m.preview + '"', 'info');
+        if (m.unclaimed) {
+          showToast('New message (unclaimed)', 'On ' + m.crCode + ': "' + m.preview + '" — claim it to reply.', 'info');
+        } else {
+          showToast('New message', 'On ' + m.crCode + ': "' + m.preview + '"', 'info');
+        }
       });
     }
 
-    if (isMessagesPage && elsewhere.length) location.reload();
+    // Unclaimed threads don't have a thread panel on this page yet, so only reload
+    // for messages on threads this associate is actually assigned to.
+    var reloadable = elsewhere.filter(function (m) { return !m.unclaimed; });
+    if (isMessagesPage && reloadable.length) location.reload();
   }
 
   async function poll() {

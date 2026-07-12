@@ -521,6 +521,7 @@
 
   <%- include('../_toast') %>
   <%- include('_message-poll') %>
+  <%- include('_notif-poll') %>
   <% if (locals.delivered) { %>
   <script>showToast('Files uploaded', '<%= delivered %> file<%= delivered === 1 ? "" : "s" %> uploaded.');</script>
   <% } %>

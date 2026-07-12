@@ -1,0 +1,103 @@
+<script>
+(function () {
+  var lastSeen = Date.now();
+  var isNotifPage = window.location.pathname === '/associate/notifications';
+
+  var ICONS = {
+    assignment:  { icon: 'material-symbols-light:assignment-ind', cls: 'assignment',  color: '#818cf8' },
+    payment:     { icon: 'material-symbols-light:payments',       cls: 'payment',     color: '#34d399' },
+    files_added: { icon: 'material-symbols-light:upload-file',    cls: 'files-added', color: '#38bdf8' },
+  };
+
+  var TOAST_TITLES = {
+    assignment: 'New assignment',
+    payment: 'Payment received',
+    files_added: 'Files added',
+  };
+
+  function updateBadge(count) {
+    var link = document.getElementById('associate-notif-link');
+    if (!link) return;
+    var badge = document.getElementById('associate-notif-count');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.id = 'associate-notif-count';
+        badge.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:9999px;background:#f59e0b;color:#000;font-size:10px;font-weight:700;';
+        link.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  function buildRow(n) {
+    var ic = ICONS[n.type] || ICONS.assignment;
+    var viewIndicator = n.bookingId
+      ? '<span class="text-xs text-amber-400 font-medium">View project →</span>'
+      : '';
+    var row = document.createElement(n.bookingId ? 'a' : 'div');
+    if (n.bookingId) row.href = '/associate/booking/' + n.bookingId;
+    row.className = 'notif-row unread';
+    row.innerHTML =
+      '<div class="notif-icon ' + ic.cls + '">' +
+        '<iconify-icon icon="' + ic.icon + '" width="17" height="17" style="color:' + ic.color + '"></iconify-icon>' +
+      '</div>' +
+      '<div class="flex-1 min-w-0">' +
+        '<p class="text-sm text-gray-200 leading-snug">' + n.message + '</p>' +
+        '<div class="flex items-center gap-3 mt-1.5">' +
+          '<span class="text-xs text-gray-600">Just now</span>' +
+          viewIndicator +
+        '</div>' +
+      '</div>' +
+      '<div class="unread-dot"></div>';
+    return row;
+  }
+
+  function prependToList(items) {
+    var empty = document.getElementById('notif-empty');
+    var list  = document.getElementById('notif-list');
+
+    if (empty) {
+      var wrapper = document.createElement('div');
+      wrapper.id = 'notif-list';
+      wrapper.className = 'border border-white/5 rounded-md overflow-hidden bg-[#0d0d0d]';
+      empty.replaceWith(wrapper);
+      list = wrapper;
+    }
+
+    items.forEach(function (n) {
+      list.insertBefore(buildRow(n), list.firstChild);
+    });
+  }
+
+  async function poll() {
+    try {
+      var res = await fetch('/api/associate/notifications/poll?since=' + lastSeen);
+      if (!res.ok) return;
+      var data = await res.json();
+      lastSeen = data.now;
+
+      updateBadge(data.unreadCount);
+
+      if (!data.items.length) return;
+
+      if (isNotifPage) {
+        prependToList(data.items);
+        fetch('/api/associate/notifications/mark-read', { method: 'POST' });
+        updateBadge(0);
+        data.items.forEach(function (n) {
+          if (typeof showToast === 'function') showToast(TOAST_TITLES[n.type] || 'Notification', n.message, 'info');
+        });
+      } else if (typeof showToast === 'function') {
+        data.items.forEach(function (n) {
+          showToast(TOAST_TITLES[n.type] || 'Notification', n.message, 'info');
+        });
+      }
+    } catch {}
+  }
+
+  setInterval(poll, 15000);
+}());
+</script>

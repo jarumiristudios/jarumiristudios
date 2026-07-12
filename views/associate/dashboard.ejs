@@ -96,6 +96,7 @@
 
   <%- include('../_toast') %>
   <%- include('_message-poll') %>
+  <%- include('_notif-poll') %>
   <% if (locals.claimError) { %>
   <script>showToast('Already claimed', <%- JSON.stringify(claimError) %>, 'error');</script>
   <% } %>

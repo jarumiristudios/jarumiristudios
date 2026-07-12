@@ -17,6 +17,7 @@ const User = require("./models/User");
 const Coupon = require("./models/Coupon");
 const Notification = require("./models/Notification");
 const AdminNotification = require("./models/AdminNotification");
+const AssociateNotification = require("./models/AssociateNotification");
 const Message = require("./models/Message");
 const LoginAttempt = require("./models/LoginAttempt");
 const PasswordResetToken = require("./models/PasswordResetToken");
@@ -27,6 +28,7 @@ const { sendBookingConfirmation, sendAdminNewBookingAlert, sendAdminNewApplicati
 const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 const { fileTypeFromMime, uniqueFilename, archiveBookingFolder } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
+const { createLocalStorage } = require("./lib/localMulterStorage");
 const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefixExcept } = require("./lib/r2");
 
 function endOfDay(dateStr) {
@@ -201,6 +203,18 @@ app.post("/webhooks/stripe", express.raw({ type: "application/json" }), async (r
               message: isInactive
                 ? `Deposit of $${depositAmount} wired for project ${booking.crCode}, which is currently ${booking.archived ? "archived" : booking.status}. Review manually.`
                 : `Deposit of $${depositAmount} wired for project ${booking.crCode}. Confirm receipt and move it to in-progress.`,
+            });
+          }
+          if ((paymentType === "deposit" || paymentType === "final") && booking.assignedTo) {
+            const paidAmount = (invoice.amount_paid / 100).toFixed(2);
+            await AssociateNotification.create({
+              associateId: booking.assignedTo,
+              bookingId: booking._id,
+              crCode: booking.crCode,
+              type: "payment",
+              message: paymentType === "deposit"
+                ? `Deposit of $${paidAmount} received for project ${booking.crCode}.`
+                : `Final payment of $${paidAmount} received for project ${booking.crCode}.`,
             });
           }
         }
@@ -782,14 +796,22 @@ function restrictToApplicationFileTypes(req, file, cb) {
 // of local disk — the R2 key is flat (`<crCode>/<storedName>`), so "folder" (video/audio/
 // image/other/deliverables/chat) is decided by each upload-completion handler and stored as
 // Mongo metadata only, never encoded in the key itself.
+//
+// Locally, STORAGE_BACKEND=local (set in the gitignored .env, never present in the deployed
+// environment's own config) switches all of them to disk instead — so dev doesn't depend on
+// live R2 credentials/network, and browsers don't hit R2's presigned-URL CORS restrictions
+// when downloading. redirectToStoredFile/moveStoredFile already know how to read a
+// backend:"local" file back from uploads/<crCode>/files/<folder>/, since that's the same
+// layout pre-R2-migration documents still use.
+const USE_LOCAL_STORAGE = process.env.STORAGE_BACKEND === "local";
 const upload = multer({
-  storage: createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage() : createR2Storage(),
   limits: { fileSize: MEMBER_MAX_FILE_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
 // Admin-uploaded final deliverables — separate multer instance so they never mix with client-submitted raw files
 const deliverableUpload = multer({
-  storage: createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, () => "deliverables") : createR2Storage(),
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
   fileFilter: rejectDangerousFiles,
 });
@@ -799,7 +821,7 @@ const deliverableUpload = multer({
 const CHAT_ATTACHMENT_MAX_SIZE = 1024 * 1024 * 1024; // 1 GB
 const CHAT_MAX_ATTACHMENTS = 10;
 const chatUpload = multer({
-  storage: createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, () => "chat") : createR2Storage(),
   limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
@@ -808,7 +830,7 @@ const chatUpload = multer({
 // (set by preAppCode) instead of req.crCode since applications aren't bookings.
 const APPLICATION_MAX_FILE_SIZE = 200 * 1024 * 1024; // 200 MB
 const applicationUpload = multer({
-  storage: createR2Storage((req) => req.appCode),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage((req) => req.appCode, () => "applications") : createR2Storage((req) => req.appCode),
   limits: { fileSize: APPLICATION_MAX_FILE_SIZE },
   fileFilter: restrictToApplicationFileTypes,
 });
@@ -1517,7 +1539,7 @@ const FILE_ADD_ALLOWED_STATUSES = ["in-review", "accepted", "in-progress", "paus
 
 app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, next) => {
   const booking = await BookingRequest.findOne({ _id: req.params.id, clientId: req.session.userId })
-    .select("crCode archived status name uploadedFiles");
+    .select("crCode archived status name uploadedFiles assignedTo");
   if (!booking) return res.status(404).json({ error: "Project not found." });
   if (booking.archived || !FILE_ADD_ALLOWED_STATUSES.includes(booking.status)) {
     return res.status(403).json({ error: "Files can only be added once your project has moved past the initial review stage." });
@@ -1554,6 +1576,16 @@ app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, 
     type: "files_added",
     message: `${booking.name} added ${newFiles.length} file${newFiles.length > 1 ? "s" : ""} to project ${booking.crCode}.`,
   }).catch((err) => console.error("Error creating admin files-added notification:", err.message));
+
+  if (booking.assignedTo) {
+    AssociateNotification.create({
+      associateId: booking.assignedTo,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "files_added",
+      message: `${booking.name} added ${newFiles.length} file${newFiles.length > 1 ? "s" : ""} to project ${booking.crCode}.`,
+    }).catch((err) => console.error("Error creating associate files-added notification:", err.message));
+  }
 
   res.json({ ok: true, count: newFiles.length });
 });
@@ -1990,7 +2022,10 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
   if (!message) return res.sendStatus(404);
   const att = messageAttachments(message).find((a) => a.storedName === filename);
   if (!att) return res.sendStatus(404);
-  if (message.senderRole !== "admin" && !att.downloaded) {
+  // req.query.downloaded distinguishes an actual download/open from the file-viewer's sidebar
+  // grid silently pre-fetching thumbnails for every project file (see _message-thread-script.ejs
+  // renderViewerGrid) — only the former should flip the "downloaded" indicator the sender sees.
+  if (message.senderRole !== "admin" && !att.downloaded && req.query.downloaded === "1") {
     att.downloaded = true;
     await message.save();
   }
@@ -2650,18 +2685,38 @@ app.post("/admin/associates/:id/reset-password", requireAdmin, async (req, res) 
 // Superadmin can assign/reassign/unassign any booking at any time, independent of whether
 // an editor has already self-claimed it.
 app.post("/admin/booking/:id/assign", requireAdmin, async (req, res) => {
-  await BookingRequest.findByIdAndUpdate(req.params.id, { assignedTo: req.body.associateId || null });
+  const newAssociateId = req.body.associateId || null;
+  const booking = await BookingRequest.findByIdAndUpdate(req.params.id, { assignedTo: newAssociateId });
+  if (booking && newAssociateId && newAssociateId !== booking.assignedTo?.toString()) {
+    AssociateNotification.create({
+      associateId: newAssociateId,
+      bookingId: booking._id,
+      crCode: booking.crCode,
+      type: "assignment",
+      message: `You were assigned to project ${booking.crCode} (${escapeHtml(booking.name)}).`,
+    }).catch((err) => console.error("Error creating associate assignment notification:", err.message));
+  }
   res.redirect(`/admin/booking/${req.params.id}`);
 });
 
-// Inject unread client-message count into all /associate views (scoped to this associate's
-// own assigned, non-archived bookings — unlike the admin-wide count).
+// Inject unread client-message count into all /associate views (this associate's own
+// assigned bookings, plus unclaimed ones every associate should see — unlike the admin-wide count).
 app.use("/associate", async (req, res, next) => {
   res.locals.associateUnreadMessageCount = 0;
+  res.locals.associateUnreadNotifCount = 0;
   if (req.session.associateId) {
     try {
-      const bookingIds = await BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id");
-      res.locals.associateUnreadMessageCount = await Message.countDocuments({ bookingId: { $in: bookingIds }, senderRole: "client", read: false });
+      const [assignedIds, unclaimedIds] = await Promise.all([
+        BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id"),
+        unclaimedChatUnlockedBookingIds(),
+      ]);
+      const bookingIds = assignedIds.concat(unclaimedIds);
+      const [unreadMessages, unreadNotifs] = await Promise.all([
+        Message.countDocuments({ bookingId: { $in: bookingIds }, senderRole: "client", read: false }),
+        AssociateNotification.countDocuments({ associateId: req.session.associateId, read: false }),
+      ]);
+      res.locals.associateUnreadMessageCount = unreadMessages;
+      res.locals.associateUnreadNotifCount = unreadNotifs;
     } catch {}
   }
   next();
@@ -2879,6 +2934,14 @@ app.post("/associate/booking/:id/send-revision-invoice", requireAssociate, requi
   res.redirect(`/associate/booking/${req.params.id}`);
 });
 
+// Projects nobody has claimed yet still have chat unlocked once accepted (chatUnlocked
+// is purely status-based) — surface their unread client messages to every associate so
+// one doesn't sit un-replied-to just because it hasn't been assigned.
+async function unclaimedChatUnlockedBookingIds() {
+  const candidates = await BookingRequest.find({ assignedTo: null, archived: { $ne: true } }).select("status");
+  return candidates.filter((b) => b.chatUnlocked).map((b) => b._id);
+}
+
 async function associateMessageThreads(associateId, { archivedOnly = false } = {}) {
   const bookings = await BookingRequest.find({ assignedTo: associateId, clientId: { $ne: null }, archived: archivedOnly ? true : { $ne: true } })
     .select("crCode name serviceType status archived createdAt uploadedFiles.storedName uploadedFiles.mimetype")
@@ -2923,9 +2986,37 @@ app.get("/associate/messages/:id", requireAssociate, async (req, res) => {
   res.render("associate/messages", { threads, booking, messages, archivedView: !!booking.archived });
 });
 
+app.get("/associate/notifications", requireAssociate, async (req, res) => {
+  const notifications = await AssociateNotification.find({ associateId: req.session.associateId }).sort({ createdAt: -1 }).limit(200);
+  await AssociateNotification.updateMany({ associateId: req.session.associateId, read: false }, { read: true });
+  res.locals.associateUnreadNotifCount = 0;
+  res.render("associate/notifications", { notifications });
+});
+
+app.get("/api/associate/notifications/poll", requireAssociate, async (req, res) => {
+  const since = parseInt(req.query.since) || 0;
+  const [unreadCount, items] = await Promise.all([
+    AssociateNotification.countDocuments({ associateId: req.session.associateId, read: false }),
+    since
+      ? AssociateNotification.find({ associateId: req.session.associateId, createdAt: { $gt: new Date(since) } }).sort({ createdAt: -1 }).lean()
+      : [],
+  ]);
+  res.json({ unreadCount, items, now: Date.now() });
+});
+
+app.post("/api/associate/notifications/mark-read", requireAssociate, async (req, res) => {
+  await AssociateNotification.updateMany({ associateId: req.session.associateId, read: false }, { read: true });
+  res.json({ ok: true });
+});
+
 app.get("/api/associate/messages/poll", requireAssociate, async (req, res) => {
   const since = parseInt(req.query.since) || 0;
-  const bookingIds = await BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id");
+  const [assignedIds, unclaimedIds] = await Promise.all([
+    BookingRequest.find({ assignedTo: req.session.associateId, archived: { $ne: true } }).distinct("_id"),
+    unclaimedChatUnlockedBookingIds(),
+  ]);
+  const unclaimedSet = new Set(unclaimedIds.map(String));
+  const bookingIds = assignedIds.concat(unclaimedIds);
   const [associateUnreadMessageCount, newMessages] = await Promise.all([
     Message.countDocuments({ bookingId: { $in: bookingIds }, senderRole: "client", read: false }),
     since
@@ -2936,6 +3027,7 @@ app.get("/api/associate/messages/poll", requireAssociate, async (req, res) => {
     bookingId: m.bookingId,
     crCode: m.crCode,
     preview: messagePreview(m.body, messageAttachments(m)),
+    unclaimed: unclaimedSet.has(String(m.bookingId)),
   }));
   res.json({ associateUnreadMessageCount, messageItems, now: Date.now() });
 });
@@ -3051,7 +3143,8 @@ app.get("/associate/messages/attachments/:filename", requireAssociate, async (re
   if (!booking) return res.sendStatus(404);
   const att = messageAttachments(message).find((a) => a.storedName === filename);
   if (!att) return res.sendStatus(404);
-  if (message.senderRole !== "admin" && !att.downloaded) {
+  // See the matching comment on the /admin/messages/attachments route above.
+  if (message.senderRole !== "admin" && !att.downloaded && req.query.downloaded === "1") {
     att.downloaded = true;
     await message.save();
   }
@@ -3206,7 +3299,8 @@ app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, 
     const booking = await BookingRequest.findById(message.bookingId).select("status");
     if (!booking?.deliverablesUnlocked) return res.sendStatus(403);
   }
-  if (message.senderRole !== "client" && !att.downloaded) {
+  // See the matching comment on the /admin/messages/attachments route above.
+  if (message.senderRole !== "client" && !att.downloaded && req.query.downloaded === "1") {
     att.downloaded = true;
     await message.save();
   }

@@ -450,6 +450,13 @@
     return true;
   }
 
+  // Marks a fetch as a real, user-intended download/open (vs. e.g. the file-viewer sidebar
+  // silently pre-fetching thumbnails) so the server only flips the sender-visible "downloaded"
+  // indicator for files the recipient actually opened.
+  function withDownloadedMarker(url) {
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'downloaded=1';
+  }
+
   // ── Lazy attachment downloads (received images/videos) — don't auto-fetch large media, show a
   // download icon instead; clicking it fetches with a cancelable progress ring, same as uploads. ──
   window.startAttachmentDownload = function (container) {
@@ -471,7 +478,7 @@
     }
 
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', url);
+    xhr.open('GET', withDownloadedMarker(url));
     xhr.responseType = 'blob';
     xhr.onprogress = function (e) {
       if (!e.lengthComputable) return;
@@ -605,7 +612,10 @@
   // relative to its normal fit-to-container size — not by resizing width/height or relying on
   // native scrollLeft/scrollTop, which only has room to move on whichever axis happens to
   // overflow for a given image's aspect ratio and produces a discontinuous jump on the first zoom step.
-  var viewerState = { list: [], index: 0 };
+  // revealed tracks, by list index, which lazy (not-yet-downloaded) files have been opened
+  // during this modal session, so their sidebar thumbnail switches from blurred to real
+  // without needing the whole modal reopened.
+  var viewerState = { list: [], index: 0, revealed: {} };
   var viewerZoom = 1; // 1 = fit-to-container, scales up from there
   var viewerPanX = 0, viewerPanY = 0; // px offset at the current zoom level
   var VIEWER_MIN_ZOOM = 1;
@@ -712,13 +722,20 @@
     var grid = document.getElementById('viewer-file-grid');
     if (!grid) return;
     grid.innerHTML = viewerState.list.map(function (f, i) {
+      // A lazy (not-yet-downloaded) file stays blurred in the sidebar until it's actually
+      // opened — otherwise every project file would get eagerly fetched (and its "downloaded"
+      // flag flipped) just because it was listed here, not because anyone looked at it.
+      var showLazy = f.lazy && !viewerState.revealed[i];
       var type = viewerFileType(f.mimetype);
-      var inner;
-      if (type === 'image') inner = '<img src="' + f.url + '" alt="" />';
+      var inner, style = '';
+      if (showLazy) {
+        inner = '<iconify-icon icon="material-symbols-light:download" width="20" height="20" style="color:#fff;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.7));"></iconify-icon>';
+        if (f.blurDataUrl) style = ' style="background-image:linear-gradient(rgba(0,0,0,0.35),rgba(0,0,0,0.35)),url(\'' + f.blurDataUrl + '\');background-size:cover;background-position:center;"';
+      } else if (type === 'image') inner = '<img src="' + f.url + '" alt="" />';
       else if (type === 'video') inner = '<video src="' + f.url + '" muted preload="metadata"></video>';
       else if (type === 'audio') inner = '<iconify-icon icon="material-symbols-light:music-note-2" width="20" height="20" style="color:#f59e0b;"></iconify-icon>';
       else inner = '<iconify-icon icon="material-symbols-light:attach-file" width="20" height="20" style="color:#6b7280;"></iconify-icon>';
-      return '<div class="viewer-thumb" data-idx="' + i + '" onclick="window.selectViewerFile(' + i + ')">' + inner + '</div>';
+      return '<div class="viewer-thumb' + (showLazy ? ' lazy-attachment' : '') + '" data-idx="' + i + '"' + style + ' onclick="window.selectViewerFile(' + i + ')">' + inner + '</div>';
     }).join('');
   }
 
@@ -742,17 +759,24 @@
     var f = viewerState.list[idx];
     if (!f) return;
     viewerState.index = idx;
+    if (f.lazy && !viewerState.revealed[idx]) {
+      viewerState.revealed[idx] = true;
+      renderViewerGrid();
+    }
     var type = viewerFileType(f.mimetype);
     var player = document.getElementById('viewer-player');
+    // This is the file actually being opened (as opposed to renderViewerGrid's sidebar
+    // thumbnails, which merely list it) — its fetch is the one that should count as a download.
+    var openedUrl = withDownloadedMarker(f.url);
     if (type === 'video') {
-      player.innerHTML = '<video controls src="' + f.url + '"></video>';
+      player.innerHTML = '<video controls src="' + openedUrl + '"></video>';
     } else if (type === 'audio') {
-      player.innerHTML = '<audio controls style="width:300px;"><source src="' + f.url + '" type="' + f.mimetype + '"></audio>';
+      player.innerHTML = '<audio controls style="width:300px;"><source src="' + openedUrl + '" type="' + f.mimetype + '"></audio>';
     } else if (type === 'image') {
       // draggable="false" stops the browser's native image drag-ghost from kicking in alongside
       // our own mousedown/mousemove pan handling below — without it, dragging the image produces
       // both our pan AND a floating native drag-preview thumbnail at the same time.
-      player.innerHTML = '<img src="' + f.url + '" alt="" draggable="false" />';
+      player.innerHTML = '<img src="' + openedUrl + '" alt="" draggable="false" />';
       var viewerImgEl = player.querySelector('img');
       viewerImgEl.addEventListener('click', handleViewerImageClick);
       viewerImgEl.addEventListener('dragstart', function (e) { e.preventDefault(); });
@@ -780,7 +804,7 @@
       (canSave
         ? '<button type="button" id="viewer-save-btn" style="font-size:12px;font-weight:600;color:#000;background:#f59e0b;border:none;cursor:pointer;padding:6px 14px;border-radius:9999px;white-space:nowrap;flex-shrink:0;">Add to project files</button>'
         : '<span style="font-size:12px;color:#4ade80;white-space:nowrap;flex-shrink:0;">✓ In project files</span>') +
-      '<a href="' + f.url + '" download="' + escapeHtml(f.originalName) + '" style="font-size:12px;font-weight:600;color:#f59e0b;text-decoration:none;padding:6px 14px;border-radius:9999px;border:1px solid rgba(245,158,11,0.3);white-space:nowrap;flex-shrink:0;">Download</a>';
+      '<a href="' + openedUrl + '" download="' + escapeHtml(f.originalName) + '" style="font-size:12px;font-weight:600;color:#f59e0b;text-decoration:none;padding:6px 14px;border-radius:9999px;border:1px solid rgba(245,158,11,0.3);white-space:nowrap;flex-shrink:0;">Download</a>';
 
     if (canSave) {
       document.getElementById('viewer-save-btn').addEventListener('click', function () { saveToProject(f); });
@@ -816,6 +840,7 @@
       startIdx = 0;
     }
     viewerState.list = list;
+    viewerState.revealed = {};
     renderViewerGrid();
     window.selectViewerFile(startIdx);
     modal.classList.remove('hidden');
