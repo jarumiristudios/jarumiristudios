@@ -1,8 +1,18 @@
 # Journal
 
-## 2026-07-11 — Returning-Client Trust Tier, Stale-Final-Invoice Auto-Archive, Track Page Account Nudge (uncommitted, in progress)
+## 2026-07-11 — Terms of Service Page (uncommitted, in progress)
 
-**What was built:** A cluster of related changes, none yet committed.
+**What was built:** A standalone `/terms` route (`server.js`) rendering a new `views/terms.ejs` — a full Terms of Service page (25 sections: eligibility/age requirements, how requests/pricing/deposits/revisions/final payment work, account and deletion behavior, content ownership and the hard line on content the studio won't work with, platform responsibility, privacy, refunds, liability, governing law) styled to match the public site's dark/amber look, with a sticky searchable table of contents (client-side substring filter over each section's text, not just its heading) and scroll-spy active-section highlighting. Linked from the footer nav on both `views/index.ejs` and `views/career.ejs` (`/dashboard`/admin footers untouched).
+
+**Decisions made:**
+- Written as a standalone EJS page with its own `<head>`/nav/footer rather than reusing a shared layout partial — matches how `career.ejs`/`index.ejs` are already each fully self-contained rather than composed from a shared shell.
+- Governing-law jurisdiction left as an explicit `[jurisdiction to be specified]` placeholder rather than guessed — a legal detail that needs the client's actual input, not one to invent.
+
+---
+
+## 2026-07-11 — Returning-Client Trust Tier, Stale-Final-Invoice Auto-Archive, Track Page Account Nudge
+
+**What was built:** Shipped in `ae4471e`.
 
 - **"Returning client" trust tier, shipped** — the exact nice-to-have flagged as deferred in `Plans/july26-milestone.md` when the guest/account upload-trust system first went in. `hasTrustedDepositHistory(userId)` (`server.js`) is now `hasCompletedProjectHistory(userId, visitorId)` — instead of only trusting a logged-in account with a past `depositStatus: "paid"` booking, it now matches on `$or: [{ clientId }, { visitorId }]` with `status: "completed"`. Two changes from the original gate at once: the bar moved from "paid a deposit" to "actually finished a project" (a paid-then-abandoned/declined project no longer earns trust), and the check now also recognizes an anonymous repeat visitor via the long-lived visitor cookie, not just an account holder — matching this app's existing pattern of extending account-gated privileges to recognized anonymous visitors (see the guest-quota tiering). Wired into `enforceGuestSubmissionQuota` (exempt from the 1-per-24h guest quota), and the upload-trust gate on `/hire` GET/POST and `/dashboard/new`. Copy on `hire.ejs`/`dashboard-new.ejs`'s "uploads locked" notice updated to describe both routes to trust ("once you've completed a project with us before, or once this request has been approved") instead of only the approval path.
 - **Compound index `{ visitorId: 1, createdAt: -1 }` added on `BookingRequest`** (`models/BookingRequest.js`) — the exact follow-up flagged 2026-07-04 when the guest-quota `exists()` check was first noted as an unindexed scan. The same index was also added on `Application` (`models/Application.js`), since `enforceApplicationSubmissionQuota` does the identical visitorId+createdAt scan and had the same gap.

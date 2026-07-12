@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terms of Service | Jarumiri Studios</title>
+  <meta name="description" content="The terms that apply when you book a project with Jarumiri Studios — pricing, deposits, delivery, revisions, content rules, and more." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>" />
+  <link rel="stylesheet" href="/output.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/iconify-icon@2/dist/iconify-icon.min.js"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    h1, h2, .brand { font-family: 'Syne', sans-serif; }
+    .nav-link { position: relative; }
+    .nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: -2px; left: 0;
+      width: 0; height: 1px;
+      background: #f59e0b;
+      transition: width 0.25s ease;
+    }
+    .nav-link:hover::after { width: 100%; }
+    html { scroll-behavior: smooth; }
+    .legal section {
+      scroll-margin-top: 6rem;
+    }
+    .legal-prose a { color: #fbbf24; text-decoration: none; }
+    .legal-prose a:hover { text-decoration: underline; }
+    .toc-link {
+      border-left: 2px solid transparent;
+    }
+    .toc-link.active {
+      color: #fbbf24 !important;
+      border-left-color: #fbbf24;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body class="bg-[#080808] text-gray-100 antialiased min-h-screen">
+
+  <!-- NAVBAR -->
+  <header class="fixed top-0 left-0 right-0 z-50 border-b border-white/5 backdrop-blur-md bg-[#080808]/80">
+    <nav class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="brand text-xl font-bold tracking-tight">
+        <span class="text-white">Jarumiri</span> Studios<span class="text-amber-400">.</span>
+      </a>
+      <div class="hidden md:flex items-center gap-8 text-sm text-gray-400 font-medium">
+        <a href="/#services" class="nav-link hover:text-white transition-colors">Services</a>
+        <a href="/#pricing"  class="nav-link hover:text-white transition-colors">Pricing</a>
+        <a href="/#about"    class="nav-link hover:text-white transition-colors">About</a>
+        <a href="/career"    class="nav-link hover:text-white transition-colors">Careers</a>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="/login"
+           class="hidden md:inline-flex text-sm font-semibold px-5 py-3.5 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors">
+          Log In
+        </a>
+        <a href="/hire"
+           class="text-sm font-semibold px-7 py-3.5 rounded-full bg-amber-400 text-black hover:bg-amber-300 transition-colors">
+          Book A Project
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- ═══════════════════════════════ TERMS OF SERVICE ═══════════════════════════════ -->
+  <main class="pt-32 pb-24 px-6 bg-[#0d0d0d]">
+    <div class="max-w-6xl mx-auto legal">
+
+      <div class="max-w-3xl">
+        <p class="text-amber-400 text-xs font-semibold tracking-widest uppercase mb-3">Legal</p>
+        <h1 class="text-3xl md:text-4xl font-bold mb-3">Terms of Service</h1>
+        <p class="text-gray-500 text-sm mb-4">Last updated: July 11, 2026</p>
+        <p class="text-gray-400 leading-relaxed mb-4">
+          These terms explain what you can expect from Jarumiri Studios when you book a project with us, and what we
+          expect from you in return. We've tried to write them the way we'd actually explain things to a client, not
+          the way a law firm would. If anything here is unclear, message us before you book — we'd rather clear it up
+          upfront than have it be a surprise later.
+        </p>
+        <p class="text-gray-400 leading-relaxed mb-16">
+          By submitting a project request, creating an account, or using any part of our site, you're agreeing to the
+          terms below. If you don't agree with something here, please don't use the site — and feel free to reach out
+          so we can talk about it.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-[240px_1fr] gap-x-12 gap-y-4 items-start">
+
+        <!-- TABLE OF CONTENTS -->
+        <aside class="hidden md:block sticky top-28 self-start max-h-[calc(100vh-8rem)] overflow-y-auto pr-2">
+          <div class="relative mb-4">
+            <iconify-icon icon="material-symbols-light:search" width="18" height="18" class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"></iconify-icon>
+            <input
+              id="toc-search"
+              type="text"
+              placeholder="Search terms..."
+              autocomplete="off"
+              class="w-full bg-white/7 border border-white/20 rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:border-amber-400/60 focus:bg-white/10 transition-colors"
+            />
+          </div>
+          <p class="text-gray-600 text-xs font-semibold tracking-widest uppercase mb-3">On This Page</p>
+          <p id="toc-no-results" class="hidden text-gray-600 text-sm italic pl-3 mb-3">No matching topics.</p>
+          <nav class="flex flex-col text-sm">
+            <a href="#eligibility" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">1. Who This Applies To</a>
+            <a href="#what-we-offer" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">2. What We Offer</a>
+            <a href="#submitting-a-request" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">3. Submitting a Request</a>
+            <a href="#pricing-review" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">4. Agreeing on a Price</a>
+            <a href="#the-deposit" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">5. The Deposit</a>
+            <a href="#deposit-not-paid" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">6. Deposit Not Paid in Time</a>
+            <a href="#delivery-date" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">7. Your Delivery Date</a>
+            <a href="#revisions" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">8. Revisions</a>
+            <a href="#communication" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">9. Communicating With Us</a>
+            <a href="#final-payment" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">10. Final Payment</a>
+            <a href="#downloading-your-work" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">11. Downloading Your Work</a>
+            <a href="#final-payment-not-made" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">12. Final Payment Not Made</a>
+            <a href="#pausing-or-withdrawing" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">13. Pausing or Withdrawing</a>
+            <a href="#your-account" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">14. Your Account</a>
+            <a href="#content-you-send-us" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">15. Content You Send Us</a>
+            <a href="#finished-work-ownership" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">16. The Finished Work</a>
+            <a href="#content-we-cant-work-with" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">17. Content We Can't Work With</a>
+            <a href="#platform-responsibility" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">18. Your Platforms</a>
+            <a href="#privacy" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">19. Privacy &amp; Confidentiality</a>
+            <a href="#refunds" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">20. Refunds</a>
+            <a href="#right-to-decline" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">21. Our Right to Decline</a>
+            <a href="#liability" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">22. Limitation of Liability</a>
+            <a href="#changes-to-terms" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">23. Changes to These Terms</a>
+            <a href="#governing-law" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">24. Governing Law</a>
+            <a href="#contact-us" class="toc-link py-1.5 pl-3 text-gray-500 hover:text-white transition-colors">25. Contact Us</a>
+          </nav>
+        </aside>
+
+      <div class="legal-prose space-y-12 text-gray-400 leading-relaxed max-w-3xl">
+
+        <section id="eligibility">
+          <h2 class="text-white text-xl font-bold mb-3">1. Who This Applies To, and Age Requirements</h2>
+          <p class="mb-3">
+            We work with adult content creators, so this point matters more than it would for most businesses: you
+            must be at least 18 years old to book a project, create an account, or send us any content. By using our
+            services, you are personally confirming that you are 18 or older.
+          </p>
+          <p>
+            This also extends to anyone shown in the material you send us. Every person who appears in footage or
+            images you submit must be an adult, and you are personally responsible for confirming that and for
+            having their consent to have that material edited and returned to you. We do not verify this ourselves —
+            we rely on you to be truthful about it, and treating this requirement seriously is a condition of working
+            with us at all.
+          </p>
+        </section>
+
+        <section id="what-we-offer">
+          <h2 class="text-white text-xl font-bold mb-3">2. What We Offer</h2>
+          <p class="mb-3">
+            We offer video editing, color grading, sound design, and motion graphics services, built around a few
+            pricing tiers — Clip, Scene, Feature, and Custom for larger or more involved projects. Each tier is
+            structured for a different scope of work and comes with a set number of included revision rounds, so a
+            longer or more complex edit gets more back-and-forth built in. You can also add optional extras on top of
+            a tier, like rush delivery, captions, a censored preview version, or an intro/outro bumper.
+          </p>
+          <p>
+            The exact pricing and what's included in each tier is shown on our booking page at the time you submit a
+            request, and that's the version that applies to your project. We do occasionally adjust pricing as our
+            process and turnaround times change, but a price only ever changes for you if we tell you directly —
+            once you and our team have agreed on a price for your specific project, that number doesn't move unless
+            you ask for something additional.
+          </p>
+        </section>
+
+        <section id="submitting-a-request">
+          <h2 class="text-white text-xl font-bold mb-3">3. Submitting a Project Request</h2>
+          <p class="mb-3">
+            To start a project, you fill out our booking form with a description of what you want done, which tier
+            fits your project, any add-ons you'd like, and links to the platforms or accounts the finished content
+            will live on. This gives our team what we need to understand the project and quote it accurately.
+          </p>
+          <p class="mb-3">
+            If this is your first time working with us, we ask that you describe the project and share links to your
+            existing content rather than uploading raw files directly at this stage. Once you've completed a project
+            with us before, that restriction lifts and you can upload files straight into the booking form going
+            forward — up to 20 files per submission, at up to 250MB each. This isn't about not trusting first-time
+            clients; it's a practical safeguard against strangers uploading files to us with no relationship or
+            payment history behind them.
+          </p>
+          <p>
+            To keep the system fair and prevent spam, anyone submitting a request without an account or a completed
+            project history is limited to one submission every 24 hours. Creating an account and building a history
+            with us removes that limit.
+          </p>
+        </section>
+
+        <section id="pricing-review">
+          <h2 class="text-white text-xl font-bold mb-3">4. Review and Agreeing on a Price</h2>
+          <p class="mb-3">
+            After you submit a request, our team reviews it and gets back to you with a confirmed price for the
+            project. For the Clip, Scene, and Feature tiers this is usually close to the listed price plus any
+            add-ons you selected; for Custom projects, or anything with unusual scope, we'll work out a fair price
+            with you directly based on what you've described. Nothing is charged to you during this review stage.
+          </p>
+          <p>
+            Once a price is agreed, we send you a deposit invoice and your project officially moves into active
+            status. You're welcome to ask questions or request adjustments to the scope before agreeing to a price —
+            the deposit invoice is the point where the project and price become locked in.
+          </p>
+        </section>
+
+        <section id="the-deposit">
+          <h2 class="text-white text-xl font-bold mb-3">5. The Deposit</h2>
+          <p class="mb-3">
+            Once a price is agreed, we invoice you for a deposit equal to 30% of the total project price. This
+            deposit secures your spot in our schedule and covers the work that goes into starting your project. The
+            remaining 70% is billed later, as the final payment, once your project is finished (see Section 8).
+          </p>
+          <p class="mb-3">
+            Every deposit invoice comes with a due date at least three days out from when it's sent, so you have a
+            reasonable window to pay. We'll also send you a reminder if the due date is approaching and it's still
+            unpaid.
+          </p>
+          <p>
+            Deposits are paid securely through Stripe, a payment processor used by most online businesses — we never
+            see or store your card details ourselves.
+          </p>
+        </section>
+
+        <section id="deposit-not-paid">
+          <h2 class="text-white text-xl font-bold mb-3">6. If the Deposit Isn't Paid in Time</h2>
+          <p class="mb-3">
+            If the due date passes and the deposit still hasn't been paid, we treat the project as inactive. It's
+            set aside, any files you'd already sent us are moved into secure long-term storage rather than staying
+            in our active queue, and the unpaid invoice is cancelled. You'll get an email and an in-app notification
+            letting you know this happened.
+          </p>
+          <p>
+            This isn't a punishment and it isn't permanent — it simply reflects that we can't hold an active
+            production slot open indefinitely without payment. If you're ready to move forward after this happens,
+            just reach out to us and we can pick the project back up.
+          </p>
+        </section>
+
+        <section id="delivery-date">
+          <h2 class="text-white text-xl font-bold mb-3">7. Your Delivery Date</h2>
+          <p>
+            We set a firm delivery date for your project once your deposit has been paid — not before. This is
+            because a realistic delivery date depends on where your project sits in our production schedule at the
+            moment work actually begins, and that schedule shifts based on what else is in progress until a deposit
+            confirms your project is really going ahead. Once the deposit clears, we'll give you a specific date and
+            keep you posted if anything changes.
+          </p>
+        </section>
+
+        <section id="revisions">
+          <h2 class="text-white text-xl font-bold mb-3">8. Revisions</h2>
+          <p class="mb-3">
+            Every pricing tier includes a set number of revision rounds — the details are shown on the booking page
+            for each tier, and generally scale with the size of the tier, so a Feature-length project comes with more
+            included revisions than a short Clip. A revision round means you review a draft and send back specific
+            feedback on what you'd like changed.
+          </p>
+          <p>
+            If you need more revisions than your tier includes, that's not a problem — you can request additional
+            rounds at any point, and we'll invoice each one individually at a small fixed rate. There's no hard limit
+            on how many extra rounds you can request; we just ask that feedback be specific enough for us to act on
+            it, so revisions move the project forward rather than going in circles.
+          </p>
+        </section>
+
+        <section id="communication">
+          <h2 class="text-white text-xl font-bold mb-3">9. Communicating With Us</h2>
+          <p class="mb-3">
+            Once your project is accepted and moving forward, direct messaging opens up between you and our studio
+            through your dashboard, so you can send notes, ask questions, and share additional reference material as
+            work progresses. You can attach files to messages too, up to 10 attachments per message and 1GB per
+            file.
+          </p>
+          <p>
+            We expect the same basic respect in messages that we'd extend to you. We reserve the right to limit or
+            restrict messaging access on an account if it's used abusively, but that's a last resort, not a default
+            posture — the vast majority of client conversations never come close to that line.
+          </p>
+        </section>
+
+        <section id="final-payment">
+          <h2 class="text-white text-xl font-bold mb-3">10. Final Payment and Completion</h2>
+          <p class="mb-3">
+            When your project is finished, we send you a final invoice for the remaining 70% of the agreed price.
+            Like the deposit, this comes with a due date at least three days out and a reminder if it's approaching
+            unpaid. As soon as the final payment clears, your project is marked complete and your finished files
+            unlock automatically — there's no separate manual step or waiting period after payment.
+          </p>
+        </section>
+
+        <section id="downloading-your-work">
+          <h2 class="text-white text-xl font-bold mb-3">11. Downloading Your Finished Work</h2>
+          <p class="mb-3">
+            Once your project is marked complete, your finished files are available to download from your dashboard
+            if you have an account, and also from the project tracking page using your unique project code — even if
+            you booked as a guest. There's no expiration date on this access; your files remain downloadable for as
+            long as your project stays active in our system.
+          </p>
+          <p>
+            One important thing to know: the project tracking page doesn't require you to log in — it only asks for
+            your project code (or your name and email). That's by design, so guests can track and download their
+            work without needing an account. But it also means your project code works a bit like a password to your
+            finished files, so please keep it private and don't share it anywhere public.
+          </p>
+        </section>
+
+        <section id="final-payment-not-made">
+          <h2 class="text-white text-xl font-bold mb-3">12. If the Final Payment Isn't Made</h2>
+          <p class="mb-3">
+            If a final invoice goes unpaid past its due date, the same pattern as the deposit applies: the invoice is
+            cancelled and you're notified. Unlike the deposit stage, we give a three-day grace period after that
+            before doing anything further, in case you're just working out payment on your end.
+          </p>
+          <p>
+            If three days pass with no new invoice requested, we archive the project and move its files into secure
+            long-term storage. Again, this isn't a deletion and isn't final — reach out whenever you're ready and
+            we'll pick it back up and get you a fresh invoice.
+          </p>
+        </section>
+
+        <section id="pausing-or-withdrawing">
+          <h2 class="text-white text-xl font-bold mb-3">13. Pausing or Withdrawing a Project</h2>
+          <p class="mb-3">
+            If you need to pause a project that's in progress — for example, if your plans change or you need more
+            time — you can do that yourself from your dashboard at any point. A paused project stays exactly as it
+            is; nothing is deleted, and you can pick it back up whenever you're ready.
+          </p>
+          <p class="mb-3">
+            You can also withdraw a project entirely and delete it from your dashboard. Doing this is permanent for
+            any raw files you'd uploaded — source footage, reference material, and chat attachments are wiped
+            completely from our systems and can't be recovered. If we had already delivered finished files to you
+            before you withdrew the project, we keep a copy of those specific delivered files as a record of what was
+            handed over, even though your original raw materials are gone.
+          </p>
+          <p>
+            This is a deliberate, one-way action — please treat it as final rather than a way to temporarily clear a
+            project, and use the pause option instead if you might want to come back to it.
+          </p>
+        </section>
+
+        <section id="your-account">
+          <h2 class="text-white text-xl font-bold mb-3">14. Your Account</h2>
+          <p class="mb-3">
+            You don't need an account to book a project — you can go through the whole process as a guest and track
+            your project by code. Creating an account is optional, but it removes the submission-frequency limit
+            described in Section 3, lets you unlock direct file uploads sooner, saves your details so you don't
+            have to re-enter them on future bookings, and gives you one place to see every project you've booked
+            with us and message our team directly.
+          </p>
+          <p>
+            You can delete your account at any time from your dashboard, which requires you to type your account
+            email to confirm — this is a deliberate extra step since the action is permanent. Deleting your account
+            wipes the raw files across every project tied to it, the same way withdrawing an individual project
+            does, while preserving any files we'd already delivered to you as finished work. If you'd like a copy of
+            your account information or project history before deleting your account, just ask us directly and we'll
+            get that to you.
+          </p>
+        </section>
+
+        <section id="content-you-send-us">
+          <h2 class="text-white text-xl font-bold mb-3">15. Ownership of the Content You Send Us</h2>
+          <p class="mb-3">
+            Anything you upload or share with us — footage, photos, audio, reference material — remains yours. By
+            sending it to us, you're giving us permission to view, store, and work with it solely for the purpose of
+            completing your project. We don't use it for anything beyond that, and we don't share it with anyone
+            outside of the people directly working on your project.
+          </p>
+          <p>
+            You're responsible for making sure you actually have the right to send us whatever you send — whether
+            that's because it's footage of yourself, or because you have the necessary permission from whoever is
+            shown in it. If a piece of content turns out to involve rights you didn't actually have, that
+            responsibility sits with you, not with us.
+          </p>
+        </section>
+
+        <section id="finished-work-ownership">
+          <h2 class="text-white text-xl font-bold mb-3">16. Ownership of the Finished Work</h2>
+          <p>
+            Once your final payment clears and your project is marked complete, the finished files we deliver to you
+            are yours to use as you see fit. Before that point — while a project is still in progress and only a
+            deposit has been paid — the work in progress belongs to us, since it isn't finished or paid for yet. We
+            don't publish, repost, or otherwise use your finished work ourselves unless you separately and explicitly
+            give us permission to, for example to show as a portfolio piece.
+          </p>
+        </section>
+
+        <section id="content-we-cant-work-with">
+          <h2 class="text-white text-xl font-bold mb-3">17. Content We Can't Work With</h2>
+          <p class="mb-3">
+            We will not accept, edit, or work with any content involving minors in any capacity, non-consensual
+            acts, or material that's otherwise illegal to produce or distribute. This is a hard line, not a
+            judgment call made case by case.
+          </p>
+          <p>
+            If we discover or reasonably suspect that content submitted to us falls into any of these categories, we
+            will immediately stop work, remove the material from our systems, end the project without refund, and
+            where required by law, report it to the appropriate authorities. This applies regardless of what stage a
+            project is at or what's already been paid.
+          </p>
+        </section>
+
+        <section id="platform-responsibility">
+          <h2 class="text-white text-xl font-bold mb-3">18. Your Responsibility on the Platforms You Publish To</h2>
+          <p>
+            We edit and deliver your content — what you do with it afterward is between you and the platform you
+            post it to. Sites like OnlyFans, Fansly, and similar platforms each have their own content rules, and
+            it's your responsibility to make sure whatever you publish complies with them. We're not able to
+            guarantee that any finished content will be accepted by a particular platform, and we're not responsible
+            for any action a platform takes against your account after you post something we made for you.
+          </p>
+        </section>
+
+        <section id="privacy">
+          <h2 class="text-white text-xl font-bold mb-3">19. Privacy and Confidentiality</h2>
+          <p>
+            We treat everything about your project as confidential — your identity, your content, and the details of
+            what you've booked. We don't discuss your work publicly or with anyone outside the people directly
+            involved in completing it, and we don't use your content for our own promotion without asking you first.
+            For details on how we handle personal information more broadly, see our Privacy Policy.
+          </p>
+        </section>
+
+        <section id="refunds">
+          <h2 class="text-white text-xl font-bold mb-3">20. Refunds</h2>
+          <p class="mb-3">
+            We don't currently have an automatic refund process, and deposits and payments are generally
+            non-refundable once paid, since they cover work and scheduling time that's already been committed on our
+            end.
+          </p>
+          <p>
+            That said, if something goes genuinely wrong on our side — we can't deliver what was agreed, or there's
+            a real mistake in how a project was handled — reach out to us directly and we'll work it out with you in
+            good faith. These situations are handled individually rather than through a fixed policy, because the
+            right resolution usually depends on the specifics.
+          </p>
+        </section>
+
+        <section id="right-to-decline">
+          <h2 class="text-white text-xl font-bold mb-3">21. Our Right to Decline or End a Project</h2>
+          <p>
+            We can decline a project before it starts, or stop work on one already underway, if it involves content
+            we don't work with (Section 17), if information you gave us turns out to be false, or if continuing the
+            relationship isn't reasonably workable for us. Where we've already been paid for work we won't be
+            completing through no fault of yours, we'll discuss a fair resolution with you rather than simply keeping
+            the payment.
+          </p>
+        </section>
+
+        <section id="liability">
+          <h2 class="text-white text-xl font-bold mb-3">22. Limitation of Liability</h2>
+          <p>
+            We do our best to deliver quality work on the timeline we agree to, but we can't guarantee a specific
+            outcome for your content once it's posted — things like platform performance, audience reception, or
+            income are outside our control. To the extent allowed by law, our responsibility to you for any issue
+            related to our services is limited to the amount you actually paid us for the project in question. We're
+            not responsible for indirect losses, like lost earnings or opportunities, that might result from a delay,
+            error, or issue with a project.
+          </p>
+        </section>
+
+        <section id="changes-to-terms">
+          <h2 class="text-white text-xl font-bold mb-3">23. Changes to These Terms</h2>
+          <p>
+            We may update these terms from time to time as our services evolve. If we make a meaningful change,
+            we'll update the date at the top of this page, and for significant changes we'll try to let existing
+            clients know directly. Continuing to use our services after an update means you accept the current
+            version of these terms. Changes never apply retroactively to a project you've already agreed a price and
+            paid a deposit on — that project stays governed by the terms in place when you booked it.
+          </p>
+        </section>
+
+        <section id="governing-law">
+          <h2 class="text-white text-xl font-bold mb-3">24. Governing Law</h2>
+          <p>
+            These terms are governed by the laws of <strong class="text-white">[jurisdiction to be specified]</strong>,
+            without regard to conflict-of-law rules. Any dispute that can't be resolved directly between us will be
+            handled in the courts of that jurisdiction.
+          </p>
+        </section>
+
+        <section id="contact-us">
+          <h2 class="text-white text-xl font-bold mb-3">25. Contact Us</h2>
+          <p>
+            If anything in these terms is unclear, or you want to talk through a specific situation before booking,
+            reach out to us on Telegram at <a href="https://t.me/jarumiri" target="_blank" rel="noopener">t.me/jarumiri</a>.
+            If you already have a project with us, you can also message our team directly from your dashboard.
+          </p>
+        </section>
+
+      </div>
+      </div>
+
+      <div class="mt-16 pt-8 border-t border-white/5 flex justify-center">
+        <button type="button" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"
+          class="inline-flex items-center gap-2 text-sm font-semibold px-6 py-3 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors">
+          <iconify-icon icon="material-symbols-light:arrow-upward" width="18" height="18"></iconify-icon>
+          Back to Top
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var links = Array.prototype.slice.call(document.querySelectorAll('.toc-link'));
+      if (!links.length) return;
+      var sections = links
+        .map(function (link) { return document.querySelector(link.getAttribute('href')); })
+        .filter(Boolean);
+
+      var READ_LINE = 120; // px from top of viewport that counts as "current"
+
+      var setActive = function (id) {
+        links.forEach(function (link) {
+          link.classList.toggle('active', link.getAttribute('href') === '#' + id);
+        });
+      };
+
+      var ticking = false;
+      var updateActiveSection = function () {
+        ticking = false;
+        // Near the bottom of the page there isn't enough room left to scroll the last
+        // section(s) up to READ_LINE, so fall back to "last section" once the page
+        // itself is scrolled (near) all the way down.
+        var atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+        var current = sections[0];
+        if (atBottom) {
+          current = sections[sections.length - 1];
+        } else {
+          for (var i = 0; i < sections.length; i++) {
+            if (sections[i].getBoundingClientRect().top <= READ_LINE) {
+              current = sections[i];
+            } else {
+              break;
+            }
+          }
+        }
+        setActive(current.id);
+      };
+
+      window.addEventListener('scroll', function () {
+        if (!ticking) {
+          ticking = true;
+          requestAnimationFrame(updateActiveSection);
+        }
+      }, { passive: true });
+
+      updateActiveSection();
+
+      // Search box: filter the table of contents by matching against each
+      // section's full text, not just its title, so a search for a word like
+      // "Stripe" or "archive" can surface the right topic even if that word
+      // isn't in the heading itself.
+      var searchInput = document.getElementById('toc-search');
+      var noResults = document.getElementById('toc-no-results');
+      if (searchInput) {
+        var searchIndex = links.map(function (link, i) {
+          return { link: link, text: (link.textContent + ' ' + (sections[i] ? sections[i].textContent : '')).toLowerCase() };
+        });
+
+        var filterToc = function () {
+          var query = searchInput.value.trim().toLowerCase();
+          var visibleCount = 0;
+          searchIndex.forEach(function (entry) {
+            var matches = !query || entry.text.indexOf(query) !== -1;
+            entry.link.classList.toggle('hidden', !matches);
+            if (matches) visibleCount++;
+          });
+          noResults.classList.toggle('hidden', visibleCount !== 0);
+        };
+
+        searchInput.addEventListener('input', filterToc);
+
+        searchInput.addEventListener('keydown', function (e) {
+          if (e.key !== 'Enter') return;
+          var firstVisible = searchIndex.find(function (entry) { return !entry.link.classList.contains('hidden'); });
+          if (firstVisible) {
+            firstVisible.link.click();
+            searchInput.blur();
+          }
+        });
+      }
+    })();
+  </script>
+
+  <!-- ═══════════════════════════════ FOOTER ═══════════════════════════════ -->
+  <footer class="border-t border-white/5 bg-[#0a0a0a] py-12">
+    <div class="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+
+      <div>
+        <a href="/" class="brand text-lg font-bold">
+          <span class="text-white">Jarumiri Studios</span><span class="text-amber-400">.</span>
+        </a>
+        <p class="text-gray-600 text-sm mt-1">Precision editing for content creators.</p>
+      </div>
+
+      <div class="flex flex-wrap gap-6 text-sm text-gray-500">
+        <a href="/#services" class="hover:text-white transition-colors">Services</a>
+        <a href="/#pricing"  class="hover:text-white transition-colors">Pricing</a>
+        <a href="/#about"    class="hover:text-white transition-colors">About</a>
+        <a href="/hire"      class="hover:text-white transition-colors">Book A Project</a>
+        <a href="/terms"     class="hover:text-white transition-colors">Terms of Service</a>
+      </div>
+
+      <div class="text-sm text-gray-600">
+        <p class="mt-1">&copy; 2026 Jarumiri Studios</p>
+      </div>
+
+    </div>
+  </footer>
+
+</body>
+</html>

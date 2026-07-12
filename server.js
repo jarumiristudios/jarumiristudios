@@ -830,6 +830,10 @@ app.get("/career", async (req, res) => {
   res.render("career", { roles });
 });
 
+app.get("/terms", (req, res) => {
+  res.render("terms");
+});
+
 const TRACK_SELECT_FIELDS = "crCode name email clientId serviceType pricingTier budget status archived filesDeleted depositStatus depositDueDate depositInvoiceUrl finalPaymentStatus finalDueDate finalInvoiceUrl deliveryDate deliverableFiles createdAt";
 
 // Anonymous clients have no dashboard to remind them a project moved forward — /track is the
