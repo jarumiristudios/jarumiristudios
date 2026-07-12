@@ -8,20 +8,22 @@ module.exports = {
   storedName: String,
   size: Number,
   mimetype: String,
-  // Which uploads/<crCode>/files/<folder>/ subfolder (local backend) or logical category
-  // (R2 backend, key itself is flat) the file belongs to — "video"/"audio"/"image"/"other"/
-  // "deliverables"/"chat".
+  // Logical category the file belongs to — "raws" (client-submitted), "deliverables", or "chat"
+  // (untagged chat attachment). Both storage backends resolve this to the same physical
+  // subfolder shape via chatDiskFolder/deliverableDiskFolder/diskFolderFor in server.js:
+  // <crCode>/raws/, <crCode>/finals/, <crCode>/chats/clients|associate/.
   folder: String,
-  // Full object key once uploaded to R2 (e.g. "<crCode>/<storedName>"). Unset for files
-  // still on the local `backend`.
+  // Full object key once uploaded to R2 (e.g. "<crCode>/raws/<storedName>"). Unset for files
+  // still on the local `backend`. Older documents may carry a flat legacy key
+  // ("<crCode>/<storedName>") from before folder was encoded in the key — reads always use
+  // this stored value directly rather than recomputing it, so those keep resolving unchanged.
   storageKey: String,
   // Which storage backend actually holds the bytes for this file — drives read-path branching
   // during the phased R2 migration. Defaults to "local" so existing documents need no backfill.
   backend: { type: String, enum: ["local", "r2"], default: "local" },
-  // Only meaningful for deliverableFiles, where both the shared admin login and any associate
-  // can upload through the same route — which specific associate uploaded this one, or null
-  // for the shared admin login. Chat attachments get their uploader from the parent Message's
-  // senderRole/senderAssociateId instead, since every attachment already has one.
+  // Attribution only (which associate, or null for the shared admin login, uploaded a
+  // deliverable) — no longer affects where the file is physically stored. Chat attachments get
+  // their uploader from the parent Message's senderRole/senderAssociateId instead.
   uploadedByAssociateId: { type: mongoose.Schema.Types.ObjectId, ref: "Associate", default: null },
   // Tiny base64 blurred preview (images only).
   blurDataUrl: String,

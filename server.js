@@ -29,7 +29,7 @@ const { startInvoiceExpiryJob } = require("./lib/invoiceExpiry");
 const { fileTypeFromMime, uniqueFilename, archiveBookingFolder } = require("./lib/uploadUtils");
 const { createR2Storage } = require("./lib/r2MulterStorage");
 const { createLocalStorage } = require("./lib/localMulterStorage");
-const { getPresignedDownloadUrl, deleteObject, deleteObjectsByPrefixExcept } = require("./lib/r2");
+const { getPresignedDownloadUrl, deleteObject, copyObject, deleteObjectsByPrefixExcept } = require("./lib/r2");
 
 function endOfDay(dateStr) {
   if (!dateStr) return null;
@@ -314,60 +314,64 @@ mongoose
 // File upload (multer) — fileTypeFromMime/uniqueFilename live in lib/uploadUtils.js now,
 // shared with lib/r2MulterStorage.js.
 
-// Local-disk-only concern: chat attachments and deliverables both share one DB `folder` value
-// ("chat"/"deliverables") regardless of who sent them, which used to dump every sender's
-// uploads into a single shared directory. R2 doesn't care (folder is metadata there, never part
-// of the object key) — this only changes where the bytes physically land on disk, split by
-// whichever specific account sent/uploaded them: the client, the one shared admin login (no
-// per-account id of its own), or a specific associate account (models/Associate.js).
-function staffDiskFolder(associateId) {
-  return associateId ? `associate-${associateId}` : "admin";
+// Maps a file's logical DB `folder` (kept as a stable metadata value: "chat", "deliverables", or
+// a tagged project file's own folder) to its physical storage path, shared by both the local-disk
+// and R2 backends (see lib/localMulterStorage.js / lib/r2MulterStorage.js). Chat is split by
+// whether the sender was the client or staff (admin/associate share one "associate" bucket —
+// no per-account split); deliverables and raw project files are flat, single shared folders.
+function chatDiskFolder(senderRole) {
+  return senderRole === "client" ? "chats/clients" : "chats/associate";
 }
-function chatDiskFolder(senderRole, senderAssociateId) {
-  return senderRole === "client" ? "chat/client" : `chat/${staffDiskFolder(senderAssociateId)}`;
+function deliverableDiskFolder() {
+  return "finals";
 }
-function deliverableDiskFolder(uploadedByAssociateId) {
-  return `deliverables/${staffDiskFolder(uploadedByAssociateId)}`;
-}
-// Resolves the actual on-disk subfolder for an attachment: chat and deliverable attachments get
+// Resolves the actual storage subfolder for an attachment: chat and deliverable attachments get
 // the sender-split paths above, everything else (tagged project files) keeps its own `folder`
-// as-is. senderRole/senderAssociateId are the parent Message's — irrelevant for a tagged
-// deliverable reference, which carries its own uploadedByAssociateId instead (see
+// as-is. senderRole is the parent Message's — irrelevant for a tagged deliverable reference (see
 // resolveTaggedAttachment).
-function diskFolderFor(att, senderRole, senderAssociateId) {
+function diskFolderFor(att, senderRole) {
   const folder = att.folder || "chat";
-  if (folder === "chat") return chatDiskFolder(senderRole, senderAssociateId);
-  if (folder === "deliverables") return deliverableDiskFolder(att.uploadedByAssociateId);
+  if (folder === "chat") return chatDiskFolder(senderRole);
+  if (folder === "deliverables") return deliverableDiskFolder();
   return folder;
 }
 
 // Serves a stored file's bytes given its Mongo metadata subdoc: a presigned redirect for the
-// R2 backend, or the legacy on-disk lookup (active path, then _archive) for files not yet
-// migrated. `fileDoc` is the uploadedFiles/deliverableFiles/attachment subdocument itself.
+// R2 backend (using its stored `storageKey` directly — works for both old flat-keyed and new
+// nested-keyed docs, since the key is never recomputed), or the on-disk lookup (active path,
+// then _archive) for local-backend files. `fileDoc` is the uploadedFiles/deliverableFiles/
+// attachment subdocument itself.
 async function redirectToStoredFile(res, crCode, folder, filename, fileDoc) {
   if (fileDoc?.backend === "r2" && fileDoc.storageKey) {
     const url = await getPresignedDownloadUrl(fileDoc.storageKey);
     res.redirect(302, url);
     return true;
   }
-  const activePath = path.join(__dirname, "uploads", crCode, "files", folder, filename);
+  const activePath = path.join(__dirname, "uploads", crCode, folder, filename);
   if (fs.existsSync(activePath)) { res.sendFile(activePath); return true; }
-  const archivePath = path.join(__dirname, "uploads", "_archive", crCode, "files", folder, filename);
+  const archivePath = path.join(__dirname, "uploads", "_archive", crCode, folder, filename);
   if (fs.existsSync(archivePath)) { res.sendFile(archivePath); return true; }
   return false;
 }
 
-// Moves a stored file from one logical folder to another. R2-backed files need no
-// object-storage operation at all — the R2 key is flat and never encoded folder, so the
-// caller just needs to update the fileDoc's `folder` field itself (see call sites). Local-backed
-// (pre-migration) files fall back to the original disk rename, checking the active path then
-// the _archive path and staying within whichever one the file is actually found in.
-function moveStoredFile(crCode, fromFolder, toFolder, filename, fileDoc) {
-  if (fileDoc?.backend === "r2") return true;
+// Moves a stored file from one logical folder to another, e.g. promoting a chat attachment into
+// a booking's project files. R2-backed files now encode folder in the key, so this is a real
+// server-side copy to the new key followed by deleting the old one (fileDoc.storageKey is
+// updated in place so the caller's subsequent save persists the new key). Local-backed files
+// use the original disk rename, checking the active path then the _archive path and staying
+// within whichever one the file is actually found in.
+async function moveStoredFile(crCode, fromFolder, toFolder, filename, fileDoc) {
+  if (fileDoc?.backend === "r2") {
+    const newKey = `${crCode}/${toFolder}/${filename}`;
+    await copyObject(fileDoc.storageKey, newKey);
+    await deleteObject(fileDoc.storageKey);
+    fileDoc.storageKey = newKey;
+    return true;
+  }
   for (const base of [path.join(__dirname, "uploads", crCode), path.join(__dirname, "uploads", "_archive", crCode)]) {
-    const from = path.join(base, "files", fromFolder, filename);
+    const from = path.join(base, fromFolder, filename);
     if (fs.existsSync(from)) {
-      const toDir = path.join(base, "files", toFolder);
+      const toDir = path.join(base, toFolder);
       fs.mkdirSync(toDir, { recursive: true });
       fs.renameSync(from, path.join(toDir, filename));
       return true;
@@ -636,9 +640,9 @@ async function softDeleteMessage(message) {
       await deleteObject(a.storageKey).catch((err) => console.error("R2 delete error:", err.message));
       return;
     }
-    const chatFolder = chatDiskFolder(message.senderRole, message.senderAssociateId);
-    fs.rm(path.join(__dirname, "uploads", message.crCode, "files", chatFolder, a.storedName), { force: true }, () => {});
-    fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, "files", chatFolder, a.storedName), { force: true }, () => {});
+    const chatFolder = chatDiskFolder(message.senderRole);
+    fs.rm(path.join(__dirname, "uploads", message.crCode, chatFolder, a.storedName), { force: true }, () => {});
+    fs.rm(path.join(__dirname, "uploads", "_archive", message.crCode, chatFolder, a.storedName), { force: true }, () => {});
   }));
   message.deleted = true;
   message.body = "";
@@ -671,7 +675,7 @@ function resolveTaggedAttachment(booking, source, fileId, isClient) {
   const file = booking[arrayName]?.id(fileId);
   if (!file) return null;
   if (arrayName === "deliverableFiles" && isClient && !booking.deliverablesUnlocked) return null;
-  const folder = arrayName === "deliverableFiles" ? "deliverables" : fileTypeFromMime(file.mimetype);
+  const folder = arrayName === "deliverableFiles" ? "deliverables" : "raws";
   return {
     originalName: file.originalName,
     storedName: file.storedName,
@@ -721,19 +725,18 @@ function retrySync(fn, attempts = 4, delayMs = 250) {
 
 // Permanently removes a booking's client-submitted media (raw uploads, chat attachments) while
 // keeping booking.txt and the delivered final files as a record — deliverables live in their own
-// "deliverables" subfolder, so skipping it here is what keeps them intact.
+// "finals" subfolder, so skipping it here is what keeps them intact.
 // Synchronous and awaited-in-order by archiveAndWipeBookingFiles below — the async fire-and-forget
-// version of this raced the folder rename that follows it (rm still mid-flight on the "files"
+// version of this raced the folder rename that follows it (rm still mid-flight on the booking's
 // subtree when rename tried to move the parent folder), which intermittently lost the race and
 // left the folder sitting in the active uploads/ path, wiped but never archived.
 function hardDeleteBookingFiles(crCode) {
   if (!crCode) return;
   for (const base of [path.join(__dirname, "uploads", crCode), path.join(__dirname, "uploads", "_archive", crCode)]) {
-    const filesDir = path.join(base, "files");
-    if (!fs.existsSync(filesDir)) continue;
-    for (const folder of fs.readdirSync(filesDir)) {
-      if (folder === "deliverables") continue;
-      fs.rmSync(path.join(filesDir, folder), { recursive: true, force: true });
+    if (!fs.existsSync(base)) continue;
+    for (const folder of fs.readdirSync(base)) {
+      if (folder === "finals") continue;
+      fs.rmSync(path.join(base, folder), { recursive: true, force: true });
     }
   }
 }
@@ -823,27 +826,24 @@ function restrictToApplicationFileTypes(req, file, cb) {
   });
 }
 
-// All three multer instances below write straight to R2 (see lib/r2MulterStorage.js) instead
-// of local disk — the R2 key is flat (`<crCode>/<storedName>`), so "folder" (video/audio/
-// image/other/deliverables/chat) is decided by each upload-completion handler and stored as
-// Mongo metadata only, never encoded in the key itself.
+// All four multer instances below write straight to R2 (see lib/r2MulterStorage.js) instead of
+// local disk when not in dev — both engines now share the same key/path shape,
+// `<crCode>/<folder>/<storedName>` (chats/clients, chats/associate, raws, finals), computed per
+// instance below via each engine's getFolder callback.
 //
 // Locally, STORAGE_BACKEND=local (set in the gitignored .env, never present in the deployed
 // environment's own config) switches all of them to disk instead — so dev doesn't depend on
 // live R2 credentials/network, and browsers don't hit R2's presigned-URL CORS restrictions
-// when downloading. redirectToStoredFile/moveStoredFile already know how to read a
-// backend:"local" file back from uploads/<crCode>/files/<folder>/, since that's the same
-// layout pre-R2-migration documents still use.
+// when downloading.
 const USE_LOCAL_STORAGE = process.env.STORAGE_BACKEND === "local";
 const upload = multer({
-  storage: USE_LOCAL_STORAGE ? createLocalStorage() : createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, () => "raws") : createR2Storage(undefined, () => "raws"),
   limits: { fileSize: MEMBER_MAX_FILE_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
 // Admin-uploaded final deliverables — separate multer instance so they never mix with client-submitted raw files.
-// Local disk only: split by uploader the same way deliverableDiskFolder() splits it on read.
 const deliverableUpload = multer({
-  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, (req) => deliverableDiskFolder(req.session?.associateId)) : createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, deliverableDiskFolder) : createR2Storage(undefined, deliverableDiskFolder),
   limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
   fileFilter: rejectDangerousFiles,
 });
@@ -852,12 +852,12 @@ const deliverableUpload = multer({
 // main upload system above is for), so a smaller cap than member uploads.
 const CHAT_ATTACHMENT_MAX_SIZE = 1024 * 1024 * 1024; // 1 GB
 const CHAT_MAX_ATTACHMENTS = 10;
-// Local disk only: mirrors the same split chatDiskFolder() uses when reading a chat attachment
-// back — req.session.userId is only ever set for a client session (admin/associate sessions use
-// isAdmin/associateId instead), matching how Message.senderRole/senderAssociateId end up set
-// for the message this file attaches to.
+// req.session.userId is only ever set for a client session (admin/associate sessions use
+// isAdmin/associateId instead), matching how Message.senderRole ends up set for the message
+// this file attaches to.
+const chatUploadFolder = (req) => chatDiskFolder(req.session?.userId ? "client" : "admin");
 const chatUpload = multer({
-  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, (req) => chatDiskFolder(req.session?.userId ? "client" : "admin", req.session?.associateId)) : createR2Storage(),
+  storage: USE_LOCAL_STORAGE ? createLocalStorage(undefined, chatUploadFolder) : createR2Storage(undefined, chatUploadFolder),
   limits: { fileSize: CHAT_ATTACHMENT_MAX_SIZE },
   fileFilter: restrictToAllowedMediaTypes,
 });
@@ -1072,7 +1072,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       storedName: f.filename,
       size: f.size,
       mimetype: f.mimetype,
-      folder: fileTypeFromMime(f.mimetype),
+      folder: "raws",
       storageKey: f.storageKey,
       backend: f.backend,
       blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
@@ -1596,7 +1596,7 @@ app.post("/dashboard/booking/:id/upload-files", requireClient, async (req, res, 
     storedName: f.filename,
     size: f.size,
     mimetype: f.mimetype,
-    folder: fileTypeFromMime(f.mimetype),
+    folder: "raws",
     storageKey: f.storageKey,
     backend: f.backend,
     blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
@@ -2065,7 +2065,7 @@ app.get("/admin/messages/attachments/:filename", requireAdmin, async (req, res) 
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -2084,8 +2084,8 @@ app.post("/admin/messages/attachments/:filename/save-to-project", requireAdmin, 
   if (!booking) return res.sendStatus(404);
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
-  const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
+  const type = "raws";
+  if (!(await moveStoredFile(message.crCode, chatDiskFolder(message.senderRole), type, filename, att))) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -2206,9 +2206,9 @@ app.post("/admin/booking/:id/deliverables/:fileId/delete", requireAdmin, async (
       if (file.backend === "r2") {
         await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
       } else {
-        const deliverableFolder = deliverableDiskFolder(file.uploadedByAssociateId);
-        fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", deliverableFolder, file.storedName), { force: true }, () => {});
-        fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, "files", deliverableFolder, file.storedName), { force: true }, () => {});
+        const deliverableFolder = deliverableDiskFolder();
+        fs.rm(path.join(__dirname, "uploads", booking.crCode, deliverableFolder, file.storedName), { force: true }, () => {});
+        fs.rm(path.join(__dirname, "uploads", "_archive", booking.crCode, deliverableFolder, file.storedName), { force: true }, () => {});
       }
       booking.deliverableFiles.pull(req.params.fileId);
       await booking.save();
@@ -2622,7 +2622,7 @@ app.get("/admin/uploads/:filename", requireAdmin, async (req, res) => {
   if (booking) {
     const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
     const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
-    const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder(fileDoc.uploadedByAssociateId);
+    const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder();
     if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
   }
   res.sendFile(path.join(__dirname, "uploads", filename));
@@ -2891,7 +2891,7 @@ app.post("/associate/booking/:id/deliverables/:fileId/delete", requireAssociate,
     if (file.backend === "r2") {
       await deleteObject(file.storageKey).catch((err) => console.error("R2 delete error:", err.message));
     } else {
-      fs.rm(path.join(__dirname, "uploads", booking.crCode, "files", deliverableDiskFolder(file.uploadedByAssociateId), file.storedName), { force: true }, () => {});
+      fs.rm(path.join(__dirname, "uploads", booking.crCode, deliverableDiskFolder(), file.storedName), { force: true }, () => {});
     }
     booking.deliverableFiles.pull(req.params.fileId);
     await booking.save();
@@ -3160,8 +3160,8 @@ app.post("/associate/messages/attachments/:filename/save-to-project", requireAss
   if (!booking) return res.sendStatus(404);
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
-  const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
+  const type = "raws";
+  if (!(await moveStoredFile(message.crCode, chatDiskFolder(message.senderRole), type, filename, att))) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -3187,7 +3187,7 @@ app.get("/associate/messages/attachments/:filename", requireAssociate, async (re
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -3200,7 +3200,7 @@ app.get("/associate/uploads/:filename", requireAssociate, async (req, res) => {
   if (!booking) return res.sendStatus(404);
   const uploadedMatch = booking.uploadedFiles.find(f => f.storedName === filename);
   const fileDoc = uploadedMatch || booking.deliverableFiles.find(f => f.storedName === filename);
-  const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder(fileDoc.uploadedByAssociateId);
+  const folder = uploadedMatch ? (fileDoc.folder || fileTypeFromMime(fileDoc.mimetype)) : deliverableDiskFolder();
   if (await redirectToStoredFile(res, booking.crCode, folder, filename, fileDoc)) return;
   res.sendStatus(404);
 });
@@ -3343,7 +3343,7 @@ app.get("/dashboard/messages/attachments/:filename", requireClient, async (req, 
     att.downloaded = true;
     await message.save();
   }
-  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole, message.senderAssociateId), filename, att)) return;
+  if (await redirectToStoredFile(res, message.crCode, diskFolderFor(att, message.senderRole), filename, att)) return;
   res.sendStatus(404);
 });
 
@@ -3363,8 +3363,8 @@ app.post("/dashboard/messages/attachments/:filename/save-to-project", requireCli
   if (!booking) return res.sendStatus(404);
   if (booking.archived) return res.status(403).json({ error: "This project is archived." });
 
-  const type = fileTypeFromMime(att.mimetype);
-  if (!moveStoredFile(message.crCode, chatDiskFolder(message.senderRole, message.senderAssociateId), type, filename, att)) {
+  const type = "raws";
+  if (!(await moveStoredFile(message.crCode, chatDiskFolder(message.senderRole), type, filename, att))) {
     return res.status(404).json({ error: "File not found on disk." });
   }
 
@@ -3434,7 +3434,7 @@ app.get("/dashboard/deliverables/:filename", requireClient, async (req, res) => 
   });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
   const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
-  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(fileInfo.uploadedByAssociateId), filename, fileInfo)) return;
+  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(), filename, fileInfo)) return;
   res.sendStatus(404);
 });
 
@@ -3444,7 +3444,7 @@ app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
   const booking = await BookingRequest.findOne({ crCode, "deliverableFiles.storedName": filename });
   if (!booking || !booking.deliverablesUnlocked) return res.sendStatus(403);
   const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
-  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(fileInfo.uploadedByAssociateId), filename, fileInfo)) return;
+  if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(), filename, fileInfo)) return;
   res.sendStatus(404);
 });
 
