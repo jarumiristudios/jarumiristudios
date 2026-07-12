@@ -17,7 +17,7 @@
     .sidebar-link {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px; min-height: 40px; border-radius: 6px;
-      font-size: 13.5px; color: #6b7280; font-weight: 500;
+      font-size: 13.5px; color: #9ca3af; font-weight: 500;
       text-decoration: none; transition: all 0.15s;
     }
     .sidebar-link:hover { color: #e5e7eb; background: rgba(255,255,255,0.045); }
@@ -64,9 +64,9 @@
       transition: border-color 0.2s, box-shadow 0.2s;
     }
     .form-input:focus { border-color: rgba(245,158,11,0.5); box-shadow: 0 0 0 3px rgba(245,158,11,0.07); }
-    .form-input::placeholder { color: #4b5563; }
+    .form-input::placeholder { color: #6b7280; }
     .form-input.error { border-color: rgba(239,68,68,0.5); }
-    .form-label { display: block; font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 7px; letter-spacing: 0.05em; text-transform: uppercase; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: #9ca3af; margin-bottom: 7px; letter-spacing: 0.05em; text-transform: uppercase; }
 
     .custom-select { position: relative; }
     .custom-select-trigger {
@@ -197,7 +197,7 @@
             <div>
               <p class="form-label">Email address</p>
               <p class="text-sm text-white"><%= user.email %></p>
-              <p class="text-xs text-gray-500 mt-1.5">Your email cannot be changed. Contact support if you need help.</p>
+              <p class="text-xs text-gray-400 mt-1.5">Your email cannot be changed. Contact support if you need help.</p>
             </div>
             <div class="border-t border-white/5 pt-5">
               <p class="form-label">Member since</p>
@@ -260,7 +260,7 @@
                 <p class="field-error hidden mt-1" id="err-clientType">Please select an option.</p>
               </div>
               <div>
-                <label class="form-label">External links <span class="text-gray-500 font-normal">(up to 3)</span></label>
+                <label class="form-label">External links <span class="text-gray-400 font-normal">(up to 3)</span></label>
                 <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
                 <div id="platform-hidden-inputs"></div>
                 <div class="flex gap-2">
@@ -373,9 +373,32 @@
             </div>
 
             <div class="mt-6 flex items-center justify-between gap-4">
-              <p class="text-xs text-gray-500">You'll stay logged in after changing your password.</p>
+              <p class="text-xs text-gray-400">You'll stay logged in after changing your password.</p>
               <button type="submit" id="save-btn"
                 class="px-6 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed">
+                Save changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ── Section: Email notifications ── -->
+      <div class="section-card">
+        <button class="section-header" onclick="toggleSection('notifications')">
+          <span class="text-sm font-semibold text-white">Email notifications</span>
+          <iconify-icon id="icon-notifications" class="collapse-icon" icon="material-symbols-light:expand-more" width="18" height="18"></iconify-icon>
+        </button>
+        <div id="body-notifications" class="section-body collapsed">
+          <form action="/dashboard/account/notifications" method="POST" novalidate>
+            <label class="flex items-start gap-2.5 cursor-pointer w-fit">
+              <input type="checkbox" name="emailUpdates" class="w-4 h-4 mt-0.5 shrink-0 rounded accent-amber-400" <%= user.notificationPreferences?.emailUpdates !== false ? 'checked' : '' %> />
+              <span class="text-sm text-gray-300">Send me email updates about my projects and account</span>
+            </label>
+            <p class="text-xs text-gray-500 mt-2">Covers payment due-date reminders, project status updates, and occasional offers. Turning this off also stops payment due-date reminders — you may miss a deadline.</p>
+            <div class="mt-6 flex justify-end">
+              <button type="submit"
+                class="px-6 py-2.5 rounded-full bg-amber-400 text-black text-sm font-semibold hover:bg-amber-300 transition-colors shrink-0">
                 Save changes
               </button>
             </div>
@@ -390,7 +413,7 @@
           <iconify-icon id="icon-signout" class="collapse-icon" icon="material-symbols-light:expand-more" width="18" height="18"></iconify-icon>
         </button>
         <div id="body-signout" class="section-body collapsed">
-          <p class="text-xs text-gray-600 mb-4">End your current session on this device.</p>
+          <p class="text-xs text-gray-400 mb-4">End your current session on this device.</p>
           <a href="/logout"
             class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-red-500/25 text-red-400 text-sm font-medium hover:bg-red-500/8 hover:border-red-500/40 transition-colors">
             <iconify-icon icon="material-symbols-light:logout" width="15" height="15"></iconify-icon>
@@ -406,7 +429,7 @@
           <iconify-icon id="icon-delete" class="collapse-icon" icon="material-symbols-light:expand-more" width="18" height="18"></iconify-icon>
         </button>
         <div id="body-delete" class="section-body collapsed">
-          <p class="text-xs text-gray-600 mb-4">Permanently delete your account, along with all of your projects and uploaded files. This cannot be undone.</p>
+          <p class="text-xs text-gray-400 mb-4">Permanently delete your account, along with all of your projects and uploaded files. This cannot be undone.</p>
 
           <button type="button" onclick="toggleDeleteConfirm()"
             class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-red-500/30 bg-red-500/5 text-red-400 text-sm font-semibold hover:bg-red-500/12 hover:border-red-500/50 transition-colors">
@@ -415,7 +438,7 @@
           </button>
 
           <div id="delete-confirm" class="hidden mt-5 pt-5 border-t border-red-500/15">
-            <p class="text-xs text-gray-500 mb-3">Type your email address to confirm: <span class="text-gray-300 font-medium"><%= user.email %></span></p>
+            <p class="text-xs text-gray-400 mb-3">Type your email address to confirm: <span class="text-gray-300 font-medium"><%= user.email %></span></p>
             <form action="/dashboard/account/delete" method="POST" novalidate id="delete-form">
               <input type="text" name="confirmEmail" id="confirm-email-input" autocomplete="off"
                 placeholder="<%= user.email %>"
@@ -427,7 +450,7 @@
                   Confirm deletion
                 </button>
                 <button type="button" onclick="toggleDeleteConfirm()"
-                  class="text-xs text-gray-600 hover:text-gray-400 transition-colors">
+                  class="text-xs text-gray-400 hover:text-gray-300 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -637,7 +660,7 @@
       document.getElementById('sidebar-overlay').classList.toggle('hidden');
     }
 
-    const SECTIONS = ['account-info', 'profile', 'password', 'signout', 'delete'];
+    const SECTIONS = ['account-info', 'profile', 'password', 'notifications', 'signout', 'delete'];
 
     function toggleSection(id) {
       const body = document.getElementById('body-' + id);

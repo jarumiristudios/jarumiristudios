@@ -17,7 +17,7 @@
     .sidebar-link {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px; min-height: 40px; border-radius: 6px;
-      font-size: 13.5px; color: #6b7280; font-weight: 500;
+      font-size: 13.5px; color: #9ca3af; font-weight: 500;
       text-decoration: none; transition: all 0.15s;
     }
     .sidebar-link:hover { color: #e5e7eb; background: rgba(255,255,255,0.045); }
@@ -571,6 +571,23 @@
             </div>
             <% } %>
 
+            <!-- Consent -->
+            <div class="space-y-3">
+              <div>
+                <label class="flex items-start gap-2.5 cursor-pointer w-fit">
+                  <input type="checkbox" id="tosAgreed" name="tosAgreed" class="w-4 h-4 mt-0.5 shrink-0 rounded accent-amber-400" onchange="this.classList.remove('error'); document.getElementById('err-tos').classList.add('hidden');" />
+                  <span class="text-sm text-gray-300">I agree to the <a href="/terms" target="_blank" rel="noopener" class="text-amber-400 hover:underline">Terms of Service</a> <span class="text-amber-400">*</span></span>
+                </label>
+                <p class="field-error hidden mt-1" id="err-tos">Please agree to the Terms of Service to continue.</p>
+              </div>
+              <div>
+                <label class="flex items-start gap-2.5 cursor-pointer w-fit">
+                  <input type="checkbox" id="emailConsent" name="emailConsent" class="w-4 h-4 mt-0.5 shrink-0 rounded accent-amber-400" />
+                  <span class="text-sm text-gray-300">Send me occasional email updates about my project and account <span class="text-gray-500 font-normal">(optional — changeable anytime from your account)</span></span>
+                </label>
+              </div>
+            </div>
+
           </div>
 
           <div class="mt-7 flex justify-between">
@@ -1046,7 +1063,7 @@
     // ── Price estimate ──
     const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
     const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
-    let appliedCoupons = [];
+    let appliedCoupons = [<% if (locals.welcomeDiscount) { %>{ code: 'WELCOME', discountType: 'percent', discountValue: <%= welcomeDiscount.percent %>, locked: true }<% } %>]; // [{ code, discountType, discountValue, locked? }]
     const MAX_COUPONS = 3;
 
     function couponsEnabled() {
@@ -1075,12 +1092,12 @@
           : Math.min(c.discountValue, running);
         discount += amt;
         running  -= amt;
-        return { code: c.code, amt };
+        return { code: c.code, label: c.locked ? 'Welcome discount' : `Coupon (${c.code})`, amt };
       });
       lines.innerHTML = `<div class="flex justify-between text-sm"><span class="text-gray-300">${tier} package</span><span class="text-white">$${base}</span></div>`;
       addons.forEach(a => { lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-gray-400">${a}</span><span class="text-amber-400">+$${ADDON_PRICES[a]}</span></div>`; });
       discountLines.forEach(d => {
-        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">Coupon (${d.code})</span><span class="text-green-400">−$${d.amt.toFixed(2)}</span></div>`;
+        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">${d.label}</span><span class="text-green-400">−$${d.amt.toFixed(2)}</span></div>`;
         const amtEl = document.getElementById(`coupon-chip-amt-${d.code}`);
         if (amtEl) amtEl.textContent = `$${d.amt.toFixed(2)}`;
       });
@@ -1097,7 +1114,7 @@
       const hint      = document.getElementById('coupon-disabled-hint');
 
       const enabled = couponsEnabled();
-      if (!enabled && appliedCoupons.length > 0) appliedCoupons = [];
+      if (!enabled && appliedCoupons.length > 0) appliedCoupons = appliedCoupons.filter(c => c.locked);
 
       section.classList.toggle('opacity-40', !enabled);
       section.classList.toggle('pointer-events-none', !enabled);
@@ -1110,7 +1127,7 @@
         chip.className = 'inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-green-400/10 border border-green-400/20 text-xs font-semibold text-green-400';
 
         const codeSpan = document.createElement('span');
-        codeSpan.textContent = c.code;
+        codeSpan.textContent = c.locked ? 'Welcome discount' : c.code;
         chip.appendChild(codeSpan);
 
         const amtSpan = document.createElement('span');
@@ -1118,24 +1135,31 @@
         amtSpan.className = 'pl-2 border-l border-green-400/25 text-green-300';
         chip.appendChild(amtSpan);
 
-        const removeBtn = document.createElement('button');
-        removeBtn.type = 'button';
-        removeBtn.setAttribute('aria-label', `Remove ${c.code}`);
-        removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
-        removeBtn.textContent = '×';
-        removeBtn.onclick = () => removeCoupon(i);
-        chip.appendChild(removeBtn);
+        if (!c.locked) {
+          const removeBtn = document.createElement('button');
+          removeBtn.type = 'button';
+          removeBtn.setAttribute('aria-label', `Remove ${c.code}`);
+          removeBtn.style.cssText = 'cursor:pointer;color:inherit;font-weight:700;';
+          removeBtn.textContent = '×';
+          removeBtn.onclick = () => removeCoupon(i);
+          chip.appendChild(removeBtn);
+        }
         chips.appendChild(chip);
 
-        const hiddenInput = document.createElement('input');
-        hiddenInput.type = 'hidden';
-        hiddenInput.name = 'couponCodes';
-        hiddenInput.value = c.code;
-        container.appendChild(hiddenInput);
+        // Locked (welcome) discount isn't a real Coupon document — it's applied server-side
+        // from the logged-in session, so it's deliberately left out of the submitted couponCodes.
+        if (!c.locked) {
+          const hiddenInput = document.createElement('input');
+          hiddenInput.type = 'hidden';
+          hiddenInput.name = 'couponCodes';
+          hiddenInput.value = c.code;
+          container.appendChild(hiddenInput);
+        }
       });
       chips.classList.toggle('hidden', appliedCoupons.length === 0);
 
-      const atMax = appliedCoupons.length >= MAX_COUPONS;
+      const enteredCount = appliedCoupons.filter(c => !c.locked).length;
+      const atMax = enteredCount >= MAX_COUPONS;
       input.disabled = !enabled || atMax;
       btn.disabled = !enabled || atMax;
       btn.classList.toggle('opacity-40', !enabled || atMax);
@@ -1153,7 +1177,7 @@
       const msg   = document.getElementById('coupon-msg');
       const code  = input.value.trim().toUpperCase();
       if (!code) return;
-      if (appliedCoupons.length >= MAX_COUPONS) {
+      if (appliedCoupons.filter(c => !c.locked).length >= MAX_COUPONS) {
         msg.className = 'text-xs mt-2 text-amber-400'; msg.textContent = 'You can apply up to 3 coupon codes.'; msg.classList.remove('hidden');
         return;
       }
@@ -1208,6 +1232,14 @@
     // ── Submit loading state ──
     const canUploadNow = <%= locals.canUploadNow ? 'true' : 'false' %>;
     document.getElementById('booking-form').addEventListener('submit', e => {
+      const tosAgreed = document.getElementById('tosAgreed');
+      if (tosAgreed && !tosAgreed.checked) {
+        e.preventDefault();
+        tosAgreed.classList.add('error');
+        document.getElementById('err-tos').classList.remove('hidden');
+        tosAgreed.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
       if (canUploadNow) {
         const errEl    = document.getElementById('err-files');
         const hasVideo = selectedFiles.some(f => f.type.startsWith('video/'));

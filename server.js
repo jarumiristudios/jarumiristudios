@@ -529,6 +529,15 @@ const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, 
 
 const SIGNUP_DISCOUNT_PERCENT = 15;
 const SIGNUP_DISCOUNT_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
+const SIGNUP_DISCOUNT_CODE = "WELCOME"; // reserved — never matchable as a real, admin-created Coupon code
+
+// Display-only check ("should we show/offer the discount"). Actually consuming it at booking
+// time goes through an atomic findOneAndUpdate instead, so a concurrent double-submit can't
+// have both requests pass this check before either one claims it.
+function welcomeDiscountEligible(user) {
+  return !!(user && user.discountPercent && user.discountExpiresAt && user.discountExpiresAt > new Date() && !user.discountUsed);
+}
+
 const MAX_COUPONS_PER_BOOKING = 3;
 const MAX_PLATFORM_LINKS = 3;
 const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
@@ -977,9 +986,7 @@ app.get("/hire", async (req, res) => {
       : null,
     hasCompletedProjectHistory(req.session.userId, req.visitorId),
   ]);
-  const welcomeDiscount = (user.discountPercent && user.discountExpiresAt > new Date() && !user.discountUsed)
-    ? { percent: user.discountPercent }
-    : null;
+  const welcomeDiscount = welcomeDiscountEligible(user) ? { percent: user.discountPercent } : null;
   res.render("hire", {
     loggedInUser: { email: user.email },
     lastBooking,
@@ -1055,10 +1062,12 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     .filter((p) => p.platform && p.handle)
     .slice(0, MAX_PLATFORM_LINKS);
   const canUploadNow = req.canUploadNow;
+  const tosAgreed = req.body.tosAgreed === "on";
+  const emailConsent = req.body.emailConsent === "on";
 
   // Server-side validation
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || !platforms.length) {
+  if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || !platforms.length || !tosAgreed) {
     let loggedInUser = null;
     let lastBooking = null;
     let platforms = [];
@@ -1073,9 +1082,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
         lastBooking = user.bookings?.length
           ? await BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("name location")
           : null;
-        welcomeDiscount = (user.discountPercent && user.discountExpiresAt > new Date() && !user.discountUsed)
-          ? { percent: user.discountPercent }
-          : null;
+        welcomeDiscount = welcomeDiscountEligible(user) ? { percent: user.discountPercent } : null;
       }
     }
     return res.render("hire", {
@@ -1090,6 +1097,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     });
   }
 
+  let claimedDiscountUserId = null; // rolled back in the catch block if the booking save below fails
   try {
     const uploadedFiles = await Promise.all((req.files || []).map(async (f) => ({
       originalName: f.originalname,
@@ -1111,8 +1119,22 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     let discountAmount = 0;
     let running = subtotal;
     const rawCodes = [...new Set([].concat(req.body.couponCodes || []).filter(Boolean).map((c) => c.trim().toUpperCase()))].slice(0, MAX_COUPONS_PER_BOOKING);
+
+    // Claimed atomically up front, in parallel with the manual-coupon lookups below (this fetch
+    // doesn't depend on their result — only the final discount-amount math does). Claiming via
+    // findOneAndUpdate rather than a plain read-then-flip-later means two concurrent submissions
+    // from the same account can't both pass an eligibility check before either one claims it.
+    const discountClaimPromise = (req.session.userId && subtotal > 0)
+      ? User.findOneAndUpdate(
+          { _id: req.session.userId, discountUsed: false, discountPercent: { $gt: 0 }, discountExpiresAt: { $gt: new Date() } },
+          { discountUsed: true },
+          { new: false }
+        )
+      : Promise.resolve(null);
+
     if (rawCodes.length && subtotal > 0) {
       for (const rawCode of rawCodes) {
+        if (rawCode === SIGNUP_DISCOUNT_CODE) continue; // reserved — never a real, admin-created Coupon
         const coupon = await Coupon.findOne({ code: rawCode, active: true });
         if (!coupon || (coupon.expiresAt && new Date() > coupon.expiresAt)) continue;
         const amount = coupon.discountType === "percent"
@@ -1124,16 +1146,20 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       }
     }
 
-    // Auto-apply the signup welcome discount (if unused/unexpired) on top of any manually entered coupons
-    let signupDiscountApplied = null;
-    if (req.session.userId && subtotal > 0) {
-      const acct = await User.findById(req.session.userId).select("discountPercent discountExpiresAt discountUsed");
-      if (acct && acct.discountPercent && acct.discountExpiresAt > new Date() && !acct.discountUsed) {
-        const amount = Math.round(running * acct.discountPercent) / 100;
-        couponCodes.push({ code: "WELCOME", discountType: "percent", discountValue: acct.discountPercent, amount });
+    // Auto-apply the signup welcome discount (if claimed above) on top of any manually entered
+    // coupons. If it turns out to be worth $0 (e.g. a manual coupon already zeroed the subtotal)
+    // or the booking save below fails, the claim is released again so the one-time discount isn't
+    // wasted for no benefit.
+    const claimedDiscount = await discountClaimPromise;
+    if (claimedDiscount) {
+      const amount = Math.round(running * claimedDiscount.discountPercent) / 100;
+      if (amount > 0) {
+        couponCodes.push({ code: SIGNUP_DISCOUNT_CODE, discountType: "percent", discountValue: claimedDiscount.discountPercent, amount });
         discountAmount += amount;
         running -= amount;
-        signupDiscountApplied = acct._id;
+        claimedDiscountUserId = claimedDiscount._id;
+      } else {
+        await User.updateOne({ _id: claimedDiscount._id }, { discountUsed: false });
       }
     }
 
@@ -1151,6 +1177,8 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       projectBrief,
       mediaLinks,
       platforms,
+      tosAgreedAt: new Date(),
+      emailConsent,
       uploadedFiles,
       couponCodes,
       discountAmount,
@@ -1158,10 +1186,6 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
 
     await booking.save();
     writeBookingTxt(booking);
-
-    if (signupDiscountApplied) {
-      await User.findOneAndUpdate({ _id: signupDiscountApplied, discountUsed: false }, { discountUsed: true });
-    }
 
     // Auto-link booking to logged-in user and send them straight to the dashboard
     if (req.session.userId) {
@@ -1192,6 +1216,9 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
     res.redirect(`/hire/success?cr=${booking.crCode}`);
   } catch (err) {
     console.error("Booking save error:", err);
+    if (claimedDiscountUserId) {
+      await User.updateOne({ _id: claimedDiscountUserId }, { discountUsed: false }).catch(() => {});
+    }
     res.render("hire", {
       error: "Something went wrong saving your request. Please try again.",
       formData: req.body,
@@ -1329,14 +1356,30 @@ app.post("/signup", async (req, res) => {
   if (!booking) return res.redirect("/hire");
 
   try {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // An email that has ever owned an account before doesn't get a second signup discount —
+    // only genuinely new accounts do. Account deletion (POST /dashboard/account/delete) hard-deletes
+    // the User but leaves its past bookings in place with clientId still set, so this catches the
+    // delete-account-and-resignup loophole. A guest booking that never became an account (clientId
+    // still null) doesn't count against a real first-time signup.
+    const returningEmail = await BookingRequest.exists({
+      email: normalizedEmail,
+      clientId: { $ne: null },
+      _id: { $ne: booking._id },
+    });
+
     const user = new User({
-      email: email.trim().toLowerCase(),
+      email: normalizedEmail,
       password,
       name: booking.name || "",
       location: booking.location || "",
       bookings: [booking._id],
-      discountPercent: SIGNUP_DISCOUNT_PERCENT,
-      discountExpiresAt: new Date(Date.now() + SIGNUP_DISCOUNT_WINDOW_MS),
+      notificationPreferences: { emailUpdates: booking.emailConsent },
+      ...(returningEmail ? {} : {
+        discountPercent: SIGNUP_DISCOUNT_PERCENT,
+        discountExpiresAt: new Date(Date.now() + SIGNUP_DISCOUNT_WINDOW_MS),
+      }),
     });
     await user.save();
     booking.clientId = user._id;
@@ -1479,6 +1522,11 @@ app.post("/dashboard/account/profile", requireClient, async (req, res) => {
   res.redirect(redirectTo.startsWith("/") ? redirectTo : "/dashboard/account");
 });
 
+app.post("/dashboard/account/notifications", requireClient, async (req, res) => {
+  await User.findByIdAndUpdate(req.session.userId, { "notificationPreferences.emailUpdates": req.body.emailUpdates === "on" });
+  res.redirect("/dashboard/account?success=1");
+});
+
 app.post("/dashboard/account/password", requireClient, async (req, res) => {
   const { currentPassword, newPassword, confirmPassword } = req.body;
   const user = await User.findById(req.session.userId);
@@ -1584,7 +1632,8 @@ app.get("/dashboard/new", requireClient, async (req, res) => {
       ? BookingRequest.findOne({ clientId: req.session.userId }).sort({ createdAt: -1 }).select("clientType platforms")
       : null,
   ]);
-  res.render("dashboard-new", { user, profileComplete, canUploadNow, lastBooking });
+  const welcomeDiscount = welcomeDiscountEligible(user) ? { percent: user.discountPercent } : null;
+  res.render("dashboard-new", { user, profileComplete, canUploadNow, lastBooking, welcomeDiscount });
 });
 
 app.get("/dashboard/booking/:id", requireClient, async (req, res) => {
@@ -1881,7 +1930,15 @@ app.get("/admin/analytics", requireAdmin, async (req, res) => {
           ],
         },
         trustGroup: { $cond: [{ $ne: ["$clientId", null] }, "account", "guest"] },
-        hasCoupon: { $cond: [{ $gt: [{ $size: { $ifNull: ["$couponCodes", []] } }, 0] }, 1, 0] },
+        // Exclude the auto-applied signup discount (code "WELCOME") from coupon-usage stats —
+        // it's not a manually-entered promo code, so it shouldn't inflate "used a coupon" metrics.
+        realCouponCodes: { $filter: { input: { $ifNull: ["$couponCodes", []] }, as: "c", cond: { $ne: ["$$c.code", SIGNUP_DISCOUNT_CODE] } } },
+      },
+    },
+    {
+      $addFields: {
+        hasCoupon: { $cond: [{ $gt: [{ $size: "$realCouponCodes" }, 0] }, 1, 0] },
+        realCouponDiscount: { $sum: "$realCouponCodes.amount" },
       },
     },
     {
@@ -1916,7 +1973,7 @@ app.get("/admin/analytics", requireAdmin, async (req, res) => {
               _id: null,
               totalBookings: { $sum: 1 },
               couponBookings: { $sum: "$hasCoupon" },
-              totalDiscount: { $sum: { $ifNull: ["$discountAmount", 0] } },
+              totalDiscount: { $sum: "$realCouponDiscount" },
           } },
         ],
         dealSize: [
@@ -2728,6 +2785,10 @@ app.get("/admin/coupons", requireAdmin, async (req, res) => {
 
 app.post("/admin/coupons", requireAdmin, async (req, res) => {
   const { code, discountType, discountValue, expiresAt } = req.body;
+  if ((code || "").trim().toUpperCase() === SIGNUP_DISCOUNT_CODE) {
+    console.error(`Coupon create error: "${SIGNUP_DISCOUNT_CODE}" is reserved for the signup welcome discount`);
+    return res.redirect("/admin/coupons");
+  }
   try {
     await new Coupon({ code, discountType, discountValue: parseFloat(discountValue), expiresAt: expiresAt || null }).save();
   } catch (err) {
@@ -3538,6 +3599,11 @@ app.get("/track/:crCode/deliverables/:filename", async (req, res) => {
   const fileInfo = booking.deliverableFiles.find(f => f.storedName === filename);
   if (await redirectToStoredFile(res, booking.crCode, deliverableDiskFolder(), filename, fileInfo)) return;
   res.sendStatus(404);
+});
+
+// Catch-all for any request that didn't match a route above.
+app.use((req, res) => {
+  res.status(404).render("404");
 });
 
 // Safety net for anything upstream that calls next(err) without its own handling

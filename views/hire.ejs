@@ -255,7 +255,7 @@
             <div class="flex justify-between gap-10 text-sm"><span class="text-gray-400"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
             <% } }) %>
             <% (locals.couponCodes || []).forEach(c => { %>
-            <div class="flex justify-between gap-10 text-sm"><span class="text-green-400">Coupon (<%= c.code %>)</span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
+            <div class="flex justify-between gap-10 text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
             <% }) %>
           </div>
           <div class="border-t border-white/8 pt-3 flex items-baseline justify-between gap-10">
@@ -770,6 +770,23 @@
               <div id="link-hidden-inputs"></div>
             </div>
             <% } %>
+
+            <!-- Consent -->
+            <div class="space-y-3">
+              <div>
+                <label class="flex items-start gap-2.5 cursor-pointer w-fit">
+                  <input type="checkbox" id="tosAgreed" name="tosAgreed" class="w-4 h-4 mt-0.5 shrink-0 rounded accent-amber-400" onchange="setFieldError('tosAgreed', false, 'err-tos')" />
+                  <span class="text-sm text-gray-300">I agree to the <a href="/terms" target="_blank" rel="noopener" class="text-amber-400 hover:underline">Terms of Service</a> <span class="text-amber-400">*</span></span>
+                </label>
+                <p class="field-error hidden mt-1" id="err-tos">Please agree to the Terms of Service to continue.</p>
+              </div>
+              <div>
+                <label class="flex items-start gap-2.5 cursor-pointer w-fit">
+                  <input type="checkbox" id="emailConsent" name="emailConsent" class="w-4 h-4 mt-0.5 shrink-0 rounded accent-amber-400" />
+                  <span class="text-sm text-gray-300">Send me occasional email updates about my project and account <span class="text-gray-500 font-normal">(optional — changeable anytime from your account)</span></span>
+                </label>
+              </div>
+            </div>
 
           </div>
 
@@ -1581,6 +1598,13 @@
     const form = document.getElementById('booking-form');
     if (form) {
       form.addEventListener('submit', (e) => {
+        const tosAgreed = document.getElementById('tosAgreed');
+        if (tosAgreed && !tosAgreed.checked) {
+          e.preventDefault();
+          setFieldError('tosAgreed', true, 'err-tos');
+          tosAgreed.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
         if (canUploadNow) {
           const errEl = document.getElementById('err-files');
           const hasVideo = selectedFiles.some(f => f.type.startsWith('video/'));

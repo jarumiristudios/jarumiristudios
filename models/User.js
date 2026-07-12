@@ -25,6 +25,9 @@ const userSchema = new mongoose.Schema(
     discountExpiresAt:    { type: Date, default: null },
     discountUsed:         { type: Boolean, default: false },
     discountReminderSent: { type: Boolean, default: false },
+    notificationPreferences: {
+      emailUpdates: { type: Boolean, default: true },
+    },
   },
   { timestamps: true }
 );

@@ -36,6 +36,8 @@ const bookingRequestSchema = new mongoose.Schema(
       ],
       validate: { validator: (v) => v.length >= 1 && v.length <= 3, message: "Add between 1 and 3 external links." },
     },
+    tosAgreedAt: { type: Date },
+    emailConsent: { type: Boolean, default: false },
     uploadedFiles: [{ ...fileMetadataFields }],
     deliverableFiles: [{ ...fileMetadataFields, uploadedAt: { type: Date, default: Date.now } }],
     status: {

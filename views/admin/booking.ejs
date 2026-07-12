@@ -149,7 +149,7 @@
               <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
               <% } }) %>
               <% (booking.couponCodes || []).forEach(c => { %>
-              <div class="flex justify-between text-sm"><span class="text-green-400">Coupon (<%= c.code %>)</span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
+              <div class="flex justify-between text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
               <% }) %>
               <div class="flex justify-between text-sm pt-2 border-t border-white/5 mt-2"><span class="text-gray-400 font-medium">Total</span><span class="text-white font-semibold">$<%= (tierBase + addonTotal - (booking.discountAmount || 0)).toFixed(2) %></span></div>
             </div>

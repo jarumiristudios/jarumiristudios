@@ -17,7 +17,7 @@
     .sidebar-link {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 12px; min-height: 40px; border-radius: 6px;
-      font-size: 13.5px; color: #6b7280; font-weight: 500;
+      font-size: 13.5px; color: #9ca3af; font-weight: 500;
       text-decoration: none; transition: all 0.15s;
     }
     .sidebar-link:hover { color: #e5e7eb; background: rgba(255,255,255,0.045); }
@@ -268,7 +268,7 @@
           <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
           <% } }) %>
           <% (booking.couponCodes || []).forEach(c => { %>
-          <div class="flex justify-between text-sm"><span class="text-green-400">Coupon (<%= c.code %>)</span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
+          <div class="flex justify-between text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
           <% }) %>
           <div class="flex justify-between text-sm pt-2 border-t border-white/5">
             <span class="text-gray-400 font-medium">Total</span>
