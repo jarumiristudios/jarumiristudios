@@ -950,7 +950,7 @@ async function trackAccountNudge(booking) {
   // here matches what signing up would actually apply to this booking.
   let signupDiscountPreview = { eligible: false, amount: 0 };
   if (!hasAccount) {
-    const returningEmail = await BookingRequest.exists({ email: booking.email, clientId: { $ne: null }, _id: { $ne: booking._id } });
+    const returningEmail = await BookingRequest.exists({ email: booking.email, _id: { $ne: booking._id } });
     const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
     if (retroactiveEligible) {
       const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
@@ -1030,7 +1030,7 @@ app.get("/hire/success", async (req, res) => {
   // what the client will really get.
   let signupDiscountPreview = { eligible: false, amount: 0 };
   if (!alreadyLinked && !existingUser) {
-    const returningEmail = await BookingRequest.exists({ email: booking.email, clientId: { $ne: null }, _id: { $ne: booking._id } });
+    const returningEmail = await BookingRequest.exists({ email: booking.email, _id: { $ne: booking._id } });
     const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
     if (retroactiveEligible) {
       const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
@@ -1392,17 +1392,25 @@ app.post("/signup", async (req, res) => {
   const booking = await BookingRequest.findOne({ crCode: crCode?.toUpperCase().trim() });
   if (!booking) return res.redirect("/hire");
 
+  // A booking already linked to an account can't be re-signed-up-for — without this, POSTing
+  // here repeatedly with fresh, never-before-seen emails would hijack the booking (clientId just
+  // gets overwritten) and stack a fresh 15% coupon onto it every time, since retroactiveEligible
+  // only checks the new email's own history, not whether this booking already has an owner.
+  // The real next step for an already-linked booking is logging into the account that owns it.
+  if (booking.clientId) {
+    return res.redirect(`/login?next=/dashboard&cr=${encodeURIComponent(crCode)}`);
+  }
+
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
-    // An email that has ever owned an account before doesn't get a second signup discount —
-    // only genuinely new accounts do. Account deletion (POST /dashboard/account/delete) hard-deletes
-    // the User but leaves its past bookings in place with clientId still set, so this catches the
-    // delete-account-and-resignup loophole. A guest booking that never became an account (clientId
-    // still null) doesn't count against a real first-time signup.
+    // The welcome discount is for genuinely brand-new clients only: anyone who has submitted a
+    // project before — signed up or not, paid or not — is a returning email and doesn't get it
+    // again. This also naturally covers the delete-account-and-resignup loophole (POST
+    // /dashboard/account/delete hard-deletes the User but leaves past bookings in place) and
+    // guests who already paid and completed a project without ever creating an account.
     const returningEmail = await BookingRequest.exists({
       email: normalizedEmail,
-      clientId: { $ne: null },
       _id: { $ne: booking._id },
     });
 
