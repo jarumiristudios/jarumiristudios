@@ -441,6 +441,44 @@ async function enforceGuestSubmissionQuota(req, res, next) {
   next();
 }
 
+// Free tier requires an account (so the weekly cap and testimonial/gallery-rights obligation
+// below are tied to a real client record, not a clearable cookie). Runs before preCrCode/multer
+// so a blocked submission costs nothing, same rationale as enforceGuestSubmissionQuota above.
+async function enforceFreeTierGates(req, res, next) {
+  if (req.body.pricingTier !== "Free") return next();
+  if (!req.session.userId) {
+    return res.render("hire", {
+      error: "The Clip tier requires a free account — sign up or log in first.",
+      formData: req.body,
+      loggedInUser: null,
+      lastBooking: null,
+      canUploadNow: false,
+    });
+  }
+  const user = await User.findById(req.session.userId);
+  if (user?.pendingTestimonialObligation) {
+    return res.render("hire", {
+      error: "Please submit a testimonial or grant gallery rights for your previous Clip project before submitting another.",
+      formData: req.body,
+      loggedInUser: { email: user.email },
+      lastBooking: null,
+      canUploadNow: false,
+    });
+  }
+  const since = new Date(Date.now() - FREE_TIER_SUBMISSION_WINDOW_MS);
+  const recent = await BookingRequest.exists({ clientId: req.session.userId, pricingTier: "Free", createdAt: { $gte: since } });
+  if (recent) {
+    return res.render("hire", {
+      error: "You can submit one Clip project per week. Please try again later.",
+      formData: req.body,
+      loggedInUser: user ? { email: user.email } : null,
+      lastBooking: null,
+      canUploadNow: false,
+    });
+  }
+  next();
+}
+
 // Raw-file uploads at initial submission are reserved for clients with a proven track
 // record — at least one past booking that actually reached "completed" (a paid deposit
 // isn't enough on its own; a paid-but-abandoned project still sat on storage). Checked
@@ -524,8 +562,28 @@ async function enforceApplicationSubmissionQuota(req, res, next) {
   next();
 }
 
-const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
+const TIER_PRICES  = { Scene: 189, Feature: 399 }; // Free and Custom intentionally absent — both resolve to $0 base via the `|| 0` fallback below
 const ADDON_PRICES = { "Rush delivery": 50, "Platform cut": 30, "Captions": 35, "Censored preview": 45, "Intro/outro bumper": 75, "Extra revision": 30 };
+
+// Add-ons scale with tier (Scene +50%, Feature +150%) and some aren't offered at all on Free —
+// a short/simple edit doesn't need captions, a bumper, or an extra revision round baked in.
+const FREE_TIER_EXCLUDED_ADDONS = ["Captions", "Intro/outro bumper", "Extra revision"];
+const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 }; // Free and Custom default to 1x below
+
+function isAddonAllowedForTier(tier, addon) {
+  return !(tier === "Free" && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
+}
+
+function addonPriceForTier(tier, addon) {
+  const base = ADDON_PRICES[addon];
+  if (base === undefined) return undefined;
+  const multiplier = TIER_ADDON_MULTIPLIERS[tier] || 1;
+  return Math.round(base * multiplier * 100) / 100;
+}
+
+function addonTotalForTier(tier, addOns) {
+  return (addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(tier, a) ? (addonPriceForTier(tier, a) || 0) : 0), 0);
+}
 
 const SIGNUP_DISCOUNT_PERCENT = 15;
 const SIGNUP_DISCOUNT_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
@@ -544,7 +602,9 @@ function calcPercentDiscount(base, percent) {
 
 const MAX_COUPONS_PER_BOOKING = 3;
 const MAX_PLATFORM_LINKS = 3;
-const PRICING_TIERS = ["Clip", "Scene", "Feature", "Custom"];
+// "Clip" kept for historical revenue reporting even though it's no longer offered (see PRICING_TIERS usage in revenue-by-tier analytics).
+const PRICING_TIERS = ["Clip", "Free", "Scene", "Feature", "Custom"];
+const FREE_TIER_SUBMISSION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const SERVICE_TYPES = ["Video Editing", "Color Grading", "Sound Design", "Motion Graphics"];
 const PIPELINE_STATUS_ORDER = ["pending", "in-review", "accepted", "in-progress", "completed", "paused", "declined"];
 
@@ -592,12 +652,16 @@ function writeBookingTxt(booking) {
     });
   }
 
-  const basePrice = TIER_PRICES[booking.pricingTier];
-  if (basePrice !== undefined) {
-    const addonTotal = (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+  if (booking.pricingTier !== "Custom") {
+    const basePrice = TIER_PRICES[booking.pricingTier] || 0;
+    const addonTotal = addonTotalForTier(booking.pricingTier, booking.addOns);
     const subtotal = basePrice + addonTotal;
     lines.push("", "PRICING", `  ${booking.pricingTier} package: $${basePrice}`);
-    (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) lines.push(`  ${a}: +$${ADDON_PRICES[a]}`); });
+    (booking.addOns || []).forEach(a => {
+      if (!isAddonAllowedForTier(booking.pricingTier, a)) return;
+      const price = addonPriceForTier(booking.pricingTier, a);
+      if (price) lines.push(`  ${a}: +$${price}`);
+    });
     lines.push(`  Subtotal: $${subtotal}`);
     if (booking.couponCodes && booking.couponCodes.length > 0) {
       booking.couponCodes.forEach((c) => lines.push(`  Coupon ${c.code}: -$${c.amount.toFixed(2)}`));
@@ -617,9 +681,9 @@ function escapeHtml(str) {
 }
 
 function notifyAdminNewBooking(booking) {
-  const basePrice = TIER_PRICES[booking.pricingTier];
-  const costLabel = basePrice !== undefined
-    ? `${booking.pricingTier} package, $${(basePrice + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0)).toFixed(2)}`
+  const basePrice = TIER_PRICES[booking.pricingTier] || 0;
+  const costLabel = booking.pricingTier !== "Custom"
+    ? `${booking.pricingTier} package, $${(basePrice + addonTotalForTier(booking.pricingTier, booking.addOns) - (booking.discountAmount || 0)).toFixed(2)}`
     : `Custom${booking.budget ? ` (budget: ${booking.budget})` : ""}`;
 
   AdminNotification.create({
@@ -953,7 +1017,7 @@ async function trackAccountNudge(booking) {
     const returningEmail = await BookingRequest.exists({ email: booking.email, _id: { $ne: booking._id } });
     const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
     if (retroactiveEligible) {
-      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + addonTotalForTier(booking.pricingTier, booking.addOns);
       const running = subtotal - (booking.discountAmount || 0);
       const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
       if (amount > 0) signupDiscountPreview = { eligible: true, amount };
@@ -1033,7 +1097,7 @@ app.get("/hire/success", async (req, res) => {
     const returningEmail = await BookingRequest.exists({ email: booking.email, _id: { $ne: booking._id } });
     const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
     if (retroactiveEligible) {
-      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + addonTotalForTier(booking.pricingTier, booking.addOns);
       const running = subtotal - (booking.discountAmount || 0);
       const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
       if (amount > 0) signupDiscountPreview = { eligible: true, amount };
@@ -1072,7 +1136,7 @@ app.post("/hire/coupon/validate", async (req, res) => {
   });
 });
 
-app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next) => {
+app.post("/hire", enforceGuestSubmissionQuota, enforceFreeTierGates, preCrCode, async (req, res, next) => {
   const canUploadNow = await hasCompletedProjectHistory(req.session.userId, req.visitorId);
   req.canUploadNow = canUploadNow;
   const maxFiles = canUploadNow ? MEMBER_MAX_FILES : 0;
@@ -1104,7 +1168,8 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
 
   // Server-side validation
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || !platforms.length || !tosAgreed) {
+  const platformsInvalid = pricingTier === "Free" ? platforms.length !== 3 : !platforms.length;
+  if (!name || !email || !emailRe.test(email) || !location || !clientType || !serviceType.length || !pricingTier || !projectBrief || projectBrief.length > 2000 || platformsInvalid || !tosAgreed) {
     let loggedInUser = null;
     let lastBooking = null;
     let platforms = [];
@@ -1147,9 +1212,13 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       blurDataUrl: await generateBlurDataUrl(f.buffer, f.mimetype),
     })));
 
+    // Drop any add-on not offered on this tier (e.g. Captions/bumper/extra-revision on Free)
+    // before it's priced or persisted — client-side already hides these, this is the real gate.
+    const allowedAddOns = addOns.filter((a) => isAddonAllowedForTier(pricingTier, a));
+
     // Validate coupon server-side
     const basePrice  = TIER_PRICES[pricingTier] || 0;
-    const addonTotal = addOns.reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+    const addonTotal = addonTotalForTier(pricingTier, allowedAddOns);
     const subtotal   = basePrice + addonTotal;
 
     const couponCodes = [];
@@ -1209,7 +1278,7 @@ app.post("/hire", enforceGuestSubmissionQuota, preCrCode, async (req, res, next)
       clientType,
       serviceType,
       pricingTier,
-      addOns,
+      addOns: allowedAddOns,
       budget: pricingTier === "Custom" ? budget : undefined,
       projectBrief,
       mediaLinks,
@@ -1424,7 +1493,7 @@ app.post("/signup", async (req, res) => {
     let discountAppliedRetroactively = false;
 
     if (retroactiveEligible) {
-      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + addonTotalForTier(booking.pricingTier, booking.addOns);
       const running = subtotal - (booking.discountAmount || 0);
       const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
       if (amount > 0) {
@@ -1548,14 +1617,21 @@ app.get("/dashboard", requireClient, async (req, res) => {
   const user = await User.findById(req.session.userId).populate({
     path: "bookings",
     match: { filesDeleted: { $ne: true } },
-    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles deliverableFiles agreedPrice depositStatus depositInvoiceUrl finalPaymentStatus finalInvoiceUrl projectBrief archived",
+    select: "crCode serviceType pricingTier addOns discountAmount status createdAt revisions uploadedFiles deliverableFiles agreedPrice depositStatus depositInvoiceUrl finalPaymentStatus finalInvoiceUrl projectBrief archived testimonial galleryRightsGranted",
     options: { sort: { createdAt: -1 } },
   });
   if (!user) {
     req.session.destroy(() => res.redirect("/login"));
     return;
   }
-  res.render("dashboard", { user, submitted: req.query.submitted || null, TIER_PRICES, ADDON_PRICES });
+  res.render("dashboard", {
+    user,
+    submitted: req.query.submitted || null,
+    testimonialSubmitted: req.query.testimonialSubmitted || null,
+    testimonialError: req.query.testimonialError || null,
+    TIER_PRICES,
+    ADDON_PRICES,
+  });
 });
 
 app.get("/dashboard/account", requireClient, async (req, res) => {
@@ -1773,6 +1849,32 @@ app.post("/dashboard/booking/:id/revision", requireClient, async (req, res) => {
     { $push: { revisions: { message: message.trim() } } }
   );
   res.redirect(`/dashboard/booking/${req.params.id}`);
+});
+
+// Clears the Free-tier obligation set in notifyStatusChange when the booking completed —
+// either a written testimonial or granting gallery/distribution rights satisfies it.
+app.post("/dashboard/booking/:id/testimonial", requireClient, async (req, res) => {
+  const testimonialText = (req.body.testimonialText || "").trim();
+  const grantGalleryRights = req.body.grantGalleryRights === "on";
+  if (!testimonialText && !grantGalleryRights) {
+    return res.redirect(`/dashboard?testimonialError=${encodeURIComponent("Please write a testimonial or grant gallery rights.")}`);
+  }
+
+  const user = await User.findById(req.session.userId).select("pendingTestimonialObligation pendingTestimonialBookingId");
+  if (!user?.pendingTestimonialObligation || String(user.pendingTestimonialBookingId) !== req.params.id) {
+    return res.redirect("/dashboard");
+  }
+
+  const update = {};
+  if (testimonialText) update.testimonial = { text: testimonialText, submittedAt: new Date() };
+  if (grantGalleryRights) {
+    update.galleryRightsGranted = true;
+    update.galleryRightsGrantedAt = new Date();
+  }
+  await BookingRequest.updateOne({ _id: req.params.id, clientId: req.session.userId }, update);
+  await User.updateOne({ _id: req.session.userId }, { pendingTestimonialObligation: false, pendingTestimonialBookingId: null });
+
+  res.redirect("/dashboard?testimonialSubmitted=1");
 });
 
 // Once a booking has actually been looked at (past pending) the client is trusted to add raw
@@ -2316,7 +2418,13 @@ app.post("/admin/messages/attachments/:filename/save-to-project", requireAdmin, 
 async function notifyStatusChange(bookings, newStatus) {
   const label = STATUS_LABELS[newStatus] || newStatus;
   const notifications = [];
+  const freeTierObligations = [];
   for (const b of bookings) {
+    if (newStatus === "completed" && b.pricingTier === "Free" && b.clientId) {
+      freeTierObligations.push(
+        User.updateOne({ _id: b.clientId }, { pendingTestimonialObligation: true, pendingTestimonialBookingId: b._id })
+      );
+    }
     if (!b.clientId) continue;
     notifications.push({
       userId: b.clientId,
@@ -2338,6 +2446,7 @@ async function notifyStatusChange(bookings, newStatus) {
     }
   }
   if (notifications.length) await Notification.insertMany(notifications);
+  if (freeTierObligations.length) await Promise.all(freeTierObligations);
 }
 
 app.post("/admin/booking/:id/status", requireAdmin, async (req, res) => {
@@ -2363,7 +2472,7 @@ app.post("/admin/bookings/bulk-status", requireAdmin, async (req, res) => {
   if (ids.length && BOOKING_STATUSES.includes(status)) {
     const candidates = await BookingRequest.find(
       { _id: { $in: ids }, status: { $ne: status } },
-      "clientId crCode deliverableFiles status"
+      "clientId crCode deliverableFiles status pricingTier"
     );
     const bookings = candidates.filter((b) => isStatusChangeAllowed(b.status, status));
     if (bookings.length) {

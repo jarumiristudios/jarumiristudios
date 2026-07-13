@@ -21,7 +21,8 @@ const bookingRequestSchema = new mongoose.Schema(
     pricingTier: {
       type: String,
       required: true,
-      enum: ["Clip", "Scene", "Feature", "Custom"],
+      // "Clip" kept for historical bookings only — no longer offered, replaced by "Free".
+      enum: ["Clip", "Free", "Scene", "Feature", "Custom"],
     },
     addOns: [{ type: String }],
     budget: { type: String, trim: true },
@@ -88,6 +89,13 @@ const bookingRequestSchema = new mongoose.Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
+    // Free-tier obligation trade for the discounted edit — either one satisfies it.
+    testimonial: {
+      text: { type: String, trim: true, maxlength: 2000 },
+      submittedAt: { type: Date },
+    },
+    galleryRightsGranted: { type: Boolean, default: false },
+    galleryRightsGrantedAt: { type: Date },
     archived: { type: Boolean, default: false },
     filesDeleted: { type: Boolean, default: false },
     // Admin-only mute — client keeps read access to the thread but can't send. Independent of

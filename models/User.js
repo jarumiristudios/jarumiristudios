@@ -25,6 +25,11 @@ const userSchema = new mongoose.Schema(
     discountExpiresAt:    { type: Date, default: null },
     discountUsed:         { type: Boolean, default: false },
     discountReminderSent: { type: Boolean, default: false },
+    // Set when a Free-tier booking completes; cleared once the client submits a testimonial
+    // or grants gallery rights for that same booking. Blocks further Free-tier submissions
+    // while outstanding — only one can ever be pending at a time by construction.
+    pendingTestimonialObligation: { type: Boolean, default: false },
+    pendingTestimonialBookingId:  { type: mongoose.Schema.Types.ObjectId, ref: "BookingRequest", default: null },
     notificationPreferences: {
       emailUpdates: { type: Boolean, default: true },
     },

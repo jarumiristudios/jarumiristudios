@@ -65,6 +65,12 @@
       <% if (booking.filesDeleted) { %>
       <span class="status-badge" style="background:rgba(239,68,68,0.1);color:#f87171;border:1px solid rgba(239,68,68,0.2);">Files deleted by client</span>
       <% } %>
+      <% if (booking.pricingTier === 'Free') { %>
+      <span class="status-badge" style="background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.25);" title="Burn in the watermark before uploading deliverables — no automated watermarking pipeline.">Clip tier — watermark required</span>
+      <% } %>
+      <% if (booking.galleryRightsGranted) { %>
+      <span class="status-badge" style="background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.25);">Distribution rights granted</span>
+      <% } %>
     </div>
 
     <!-- Top row: status -->
@@ -114,7 +120,7 @@
             <div>
               <p class="detail-label">Package</p>
               <p class="detail-value">
-                <%= booking.pricingTier %>
+                <%= booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier %>
                 <% if (booking.pricingTier === 'Custom' && booking.budget) { %>
                 <span class="text-amber-400 ml-1">(<%= booking.budget %>)</span>
                 <% } %>
@@ -137,16 +143,22 @@
           </div>
           <% const TIER_PRICES = { Clip: 79, Scene: 189, Feature: 399 };
              const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
-             const tierBase = TIER_PRICES[booking.pricingTier];
-             if (tierBase) {
-               const addonTotal = (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+             const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
+             const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
+             const isAddonAllowedForTier = (tier, addon) => !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
+             const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+             if (booking.pricingTier !== 'Custom') {
+               const tierBase = TIER_PRICES[booking.pricingTier] || 0;
+               const addonTotal = (booking.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(booking.pricingTier, a) ? (addonPriceForTier(booking.pricingTier, a) || 0) : 0), 0);
+               const tierLabel = booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier;
+               const baseLabel = (booking.pricingTier === 'Free' && tierBase === 0) ? 'Free' : `$${tierBase}`;
           %>
           <div class="border-t border-white/5 pt-5 mb-5">
             <p class="detail-label mb-3">Client estimate</p>
             <div class="space-y-1.5">
-              <div class="flex justify-between text-sm"><span class="text-gray-400"><%= booking.pricingTier %> package</span><span class="text-gray-200">$<%= tierBase %></span></div>
-              <% (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
-              <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
+              <div class="flex justify-between text-sm"><span class="text-gray-400"><%= tierLabel %> package</span><span class="text-gray-200"><%= baseLabel %></span></div>
+              <% (booking.addOns || []).forEach(a => { if (isAddonAllowedForTier(booking.pricingTier, a) && addonPriceForTier(booking.pricingTier, a)) { %>
+              <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= addonPriceForTier(booking.pricingTier, a) %></span></div>
               <% } }) %>
               <% (booking.couponCodes || []).forEach(c => { %>
               <div class="flex justify-between text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
@@ -230,6 +242,9 @@
         <% if (!booking.filesDeleted) { %>
         <div class="card">
           <h2 class="text-base font-semibold text-white mb-1">Final deliverables <span class="text-gray-600 font-normal text-sm"><%= (booking.deliverableFiles || []).length %></span></h2>
+          <% if (booking.pricingTier === 'Free') { %>
+          <p class="text-xs text-amber-400 mb-2">Clip tier — burn in the watermark in your NLE before uploading. There's no automated watermarking in this app.</p>
+          <% } %>
           <p class="text-xs text-gray-600 mb-4">
             <% if (booking.deliverablesUnlocked) { %>
             Visible to the client on <span class="text-gray-400">/track</span> and their dashboard now that the project is marked Completed.
@@ -506,7 +521,7 @@
             <div>
               <label class="detail-label block mb-1">Agreed price (USD)</label>
               <%
-                const _estimatedTotal = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+                const _estimatedTotal = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(booking.pricingTier, a) ? (addonPriceForTier(booking.pricingTier, a) || 0) : 0), 0) - (booking.discountAmount || 0));
               %>
               <input id="deposit-price-input" type="number" name="agreedPrice" min="1" step="0.01" required
                 placeholder="e.g. 250.00"
@@ -780,7 +795,7 @@
   <!-- Accept + invoice modal (shown when clicking accepted with no invoice yet) -->
   <% if (booking.depositStatus === 'none') { %>
   <%
-    const _modalEstimate = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0) - (booking.discountAmount || 0));
+    const _modalEstimate = ((TIER_PRICES[booking.pricingTier] || 0) + (booking.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(booking.pricingTier, a) ? (addonPriceForTier(booking.pricingTier, a) || 0) : 0), 0) - (booking.discountAmount || 0));
     const _defaultDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const _minDueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   %>

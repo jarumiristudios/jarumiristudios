@@ -145,7 +145,7 @@
             <span class="text-amber-400 font-semibold"><%= b.budget %></span>
             <span class="text-gray-600 text-xs ml-1">Custom</span>
           <% } else { %>
-            <%= b.pricingTier %>
+            <%= b.pricingTier === 'Free' ? 'Clip' : b.pricingTier %>
           <% } %>
         </td>
         <td class="px-5 py-4 hidden lg:table-cell font-variant-numeric tabular-nums text-sm">

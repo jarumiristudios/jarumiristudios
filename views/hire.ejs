@@ -240,21 +240,27 @@
           <a href="/track?code=<%= crCode %>" class="text-4xl font-bold tracking-widest gradient-text hover:opacity-80 transition-opacity"><%= crCode %></a>
         </div>
 
-        <% const TIER_PRICES = { Clip: 79, Scene: 189, Feature: 399 };
+        <% const TIER_PRICES = { Scene: 189, Feature: 399 };
            const ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
-           if (locals.pricingTier && TIER_PRICES[pricingTier]) {
-             const base = TIER_PRICES[pricingTier];
-             const addonTotal = (locals.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+           const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
+           const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
+           const isAddonAllowedForTier = (tier, addon) => !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
+           const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+           if (locals.pricingTier && pricingTier !== 'Custom') {
+             const base = TIER_PRICES[pricingTier] || 0;
+             const addonTotal = (locals.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(pricingTier, a) ? (addonPriceForTier(pricingTier, a) || 0) : 0), 0);
              const subtotal = base + addonTotal;
              const discount = locals.discountAmount || 0;
              const finalTotal = Math.max(0, subtotal - discount);
+             const tierLabel = pricingTier === 'Free' ? 'Clip' : pricingTier;
+             const baseLabel = (pricingTier === 'Free' && base === 0) ? 'Free' : `$${base}`;
         %>
         <div class="inline-block text-left rounded-md border border-white/8 bg-white/3 px-6 py-4 mb-8 min-w-64">
           <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Estimated total</p>
           <div class="space-y-1.5 mb-3">
-            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-300"><%= pricingTier %> package</span><span class="text-white">$<%= base %></span></div>
-            <% (locals.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
-            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-400"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
+            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-300"><%= tierLabel %> package</span><span class="text-white"><%= baseLabel %></span></div>
+            <% (locals.addOns || []).forEach(a => { if (isAddonAllowedForTier(pricingTier, a) && addonPriceForTier(pricingTier, a)) { %>
+            <div class="flex justify-between gap-10 text-sm"><span class="text-gray-400"><%= a %></span><span class="text-amber-400">+$<%= addonPriceForTier(pricingTier, a) %></span></div>
             <% } }) %>
             <% (locals.couponCodes || []).forEach(c => { %>
             <div class="flex justify-between gap-10 text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>
@@ -262,7 +268,7 @@
           </div>
           <div class="border-t border-white/8 pt-3 flex items-baseline justify-between gap-10">
             <span class="text-sm text-gray-400">Total</span>
-            <span class="text-xl font-bold text-white">$<%= finalTotal.toFixed(2) %></span>
+            <span class="text-xl font-bold text-white"><%= (pricingTier === 'Free' && finalTotal === 0) ? 'Free' : `$${finalTotal.toFixed(2)}` %></span>
           </div>
           <p class="text-[11px] text-gray-600 mt-2">Final price may vary based on project scope and complexity.</p>
         </div>
@@ -471,9 +477,16 @@
             <input type="hidden" name="platformHandles" value="<%= p.handle %>" />
             <% }) %>
             <p class="field-error hidden mt-1" id="err-platform">Please enter a handle or profile URL.</p>
+            <% if (accountPlatforms.length !== 3) { %>
+            <p id="free-tier-links-hint" class="text-amber-400 text-xs mt-2 hidden">
+              The Clip tier requires 3 linked profiles — you currently have <%= accountPlatforms.length %>.
+              <a href="/dashboard/account" class="underline hover:text-amber-300">Add more in your profile</a> before submitting.
+            </p>
+            <% } %>
             <% } else { %>
             <div>
               <label class="form-label">External links <span class="text-amber-400">*</span> <span class="text-gray-400 font-normal">(1–3 links)</span></label>
+              <p id="free-tier-links-hint" class="text-amber-400 text-xs mb-2 hidden">The Clip tier requires all 3 links, so we can review your audience.</p>
               <div id="platform-badges" class="flex flex-wrap gap-2 mb-2 hidden"></div>
               <div id="platform-hidden-inputs"></div>
               <div class="flex gap-2">
@@ -548,9 +561,9 @@
                   <svg class="custom-select-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 8l5 5 5-5"/></svg>
                 </button>
                 <div class="custom-select-menu" id="cs-tier-menu" role="listbox">
-                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Clip'    ? 'active' : '' %>" onclick="selectOption('cs-tier','Clip',    'Clip — $79')"    role="option" data-value="Clip">
-                    <p class="opt-label">Clip <span class="text-amber-400 font-bold">$79</span></p>
-                    <p class="opt-desc">Up to 4 min · Color correction · Music sync · 2 revisions · 3-day delivery</p>
+                  <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Free'    ? 'active' : '' %>" onclick="selectOption('cs-tier','Free',    'Clip — Free')"    role="option" data-value="Free">
+                    <p class="opt-label">Clip <span class="text-amber-400 font-bold">Free</span></p>
+                    <p class="opt-desc">Up to 5 min · Watermarked · 1 project/week · Requires 3 profile links · Testimonial or gallery rights required · Account required</p>
                   </div>
                   <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Scene' ? 'active' : '' %>" onclick="selectOption('cs-tier','Scene', 'Scene — $189')" role="option" data-value="Scene">
                     <p class="opt-label">Scene <span class="text-amber-400 font-bold">$189</span> <span class="text-[10px] font-bold tracking-widest uppercase bg-amber-400 text-black px-2 py-0.5 rounded-md ml-1">Popular</span></p>
@@ -562,7 +575,7 @@
                   </div>
                   <div class="custom-select-option <%= locals.formData && formData.pricingTier === 'Custom' ? 'active' : '' %>" onclick="selectOption('cs-tier','Custom', 'Custom budget')" role="option" data-value="Custom">
                     <p class="opt-label">Custom <span class="text-gray-400 font-normal text-sm">— name your budget</span></p>
-                    <p class="opt-desc">Tell us what you have in mind and we'll work something out</p>
+                    <p class="opt-desc">For studios and high-volume clients — tell us what you have in mind and we'll work something out</p>
                   </div>
                   <div style="padding:12px 16px;border-top:1px solid rgba(255,255,255,0.06);">
                     <p style="font-size:11px;color:#6b7280;line-height:1.5;">* Prices are subject to modification based on requested services, project complexity, and queue availability.</p>
@@ -647,7 +660,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Rush delivery <span class="text-amber-400 font-bold text-xs ml-1">+$50</span></p><p class="opt-desc">Shave 2 days off your turnaround</p></div>
+                      <div><p class="opt-label">Rush delivery <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Rush delivery">+$50</span></p><p class="opt-desc">Shave 2 days off your turnaround</p></div>
                     </div>
                   </div>
                   <div class="custom-select-option" onclick="toggleAddon('Platform cut')" role="option" data-value="Platform cut">
@@ -655,7 +668,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Platform cut <span class="text-amber-400 font-bold text-xs ml-1">+$30</span></p><p class="opt-desc">Portrait or square crop per variant (for social)</p></div>
+                      <div><p class="opt-label">Platform cut <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Platform cut">+$30</span></p><p class="opt-desc">Portrait or square crop per variant (for social)</p></div>
                     </div>
                   </div>
                   <div class="custom-select-option" onclick="toggleAddon('Captions')" role="option" data-value="Captions">
@@ -663,7 +676,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Captions / subtitles <span class="text-amber-400 font-bold text-xs ml-1">+$35</span></p><p class="opt-desc">Burned-in or separate file</p></div>
+                      <div><p class="opt-label">Captions / subtitles <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Captions">+$35</span></p><p class="opt-desc">Burned-in or separate file</p></div>
                     </div>
                   </div>
                   <div class="custom-select-option" onclick="toggleAddon('Censored preview')" role="option" data-value="Censored preview">
@@ -671,7 +684,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Censored preview <span class="text-amber-400 font-bold text-xs ml-1">+$45</span></p><p class="opt-desc">Blurred version for social promos</p></div>
+                      <div><p class="opt-label">Censored preview <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Censored preview">+$45</span></p><p class="opt-desc">Blurred version for social promos</p></div>
                     </div>
                   </div>
                   <div class="custom-select-option" onclick="toggleAddon('Intro/outro bumper')" role="option" data-value="Intro/outro bumper">
@@ -679,7 +692,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Intro / outro bumper <span class="text-amber-400 font-bold text-xs ml-1">+$75</span></p><p class="opt-desc">Custom animated brand bumper (each build)</p></div>
+                      <div><p class="opt-label">Intro / outro bumper <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Intro/outro bumper">+$75</span></p><p class="opt-desc">Custom animated brand bumper (each build)</p></div>
                     </div>
                   </div>
                   <div class="custom-select-option" onclick="toggleAddon('Extra revision')" role="option" data-value="Extra revision">
@@ -687,7 +700,7 @@
                       <div class="opt-check" style="margin-top:2px;">
                         <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <div><p class="opt-label">Extra revision round <span class="text-amber-400 font-bold text-xs ml-1">+$30</span></p><p class="opt-desc">One additional consolidated batch of notes</p></div>
+                      <div><p class="opt-label">Extra revision round <span class="text-amber-400 font-bold text-xs ml-1" id="addon-price-Extra revision">+$30</span></p><p class="opt-desc">One additional consolidated batch of notes</p></div>
                     </div>
                   </div>
                   <div style="padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);">
@@ -954,6 +967,12 @@
           if (!budget.value.trim()) ok = false;
         }
 
+        if (tier === 'Free' && platformEntries.length !== 3) {
+          const linksHint = document.getElementById('free-tier-links-hint');
+          if (linksHint) linksHint.classList.add('text-red-400');
+          ok = false;
+        }
+
         setFieldError('projectBrief', !brief.value.trim(), 'err-brief');
         if (!brief.value.trim()) ok = false;
 
@@ -1183,6 +1202,8 @@
 
     // Multi-select: add-ons
     function toggleAddon(value) {
+      const tier = document.getElementById('pricingTier').value;
+      if (!isAddonAllowedForTier(tier, value)) return;
       const idx = selectedAddons.indexOf(value);
       if (idx === -1) selectedAddons.push(value);
       else            selectedAddons.splice(idx, 1);
@@ -1210,6 +1231,45 @@
       });
 
       updateEstimate();
+    }
+
+    // Refreshes each add-on option's displayed price for the given tier, and hides/disables +
+    // deselects any add-on this tier doesn't offer (e.g. Captions/bumper/extra-revision on Clip).
+    function refreshAddonOptionsForTier(tier) {
+      document.querySelectorAll('#cs-addon-menu .custom-select-option').forEach(opt => {
+        const addon = opt.dataset.value;
+        const priceEl = document.getElementById(`addon-price-${addon}`);
+        const allowed = isAddonAllowedForTier(tier, addon);
+        if (priceEl && allowed) priceEl.textContent = `+$${addonPriceForTier(tier, addon)}`;
+        opt.classList.toggle('hidden', !allowed);
+        if (!allowed && selectedAddons.includes(addon)) toggleAddonForced(addon);
+      });
+    }
+
+    // toggleAddon() refuses to remove an add-on the current tier disallows (it also refuses to
+    // add one) — this bypasses that guard specifically for the tier-change cleanup above, where
+    // we need to deselect an add-on that's no longer valid for the newly chosen tier.
+    function toggleAddonForced(value) {
+      const idx = selectedAddons.indexOf(value);
+      if (idx !== -1) selectedAddons.splice(idx, 1);
+      document.querySelectorAll('#cs-addon-menu .custom-select-option').forEach(opt => {
+        opt.classList.toggle('active', selectedAddons.includes(opt.dataset.value));
+      });
+      const label   = document.getElementById('cs-addon-label');
+      const trigger = document.getElementById('cs-addon-trigger');
+      if (selectedAddons.length === 0) {
+        label.textContent = 'Select add-ons';
+        trigger.classList.remove('selected');
+      } else {
+        label.textContent = selectedAddons.join(', ');
+      }
+      const container = document.getElementById('addon-hidden-inputs');
+      container.innerHTML = '';
+      selectedAddons.forEach(a => {
+        const inp = document.createElement('input');
+        inp.type = 'hidden'; inp.name = 'addOns'; inp.value = a;
+        container.appendChild(inp);
+      });
     }
 
     // External links: platform dropdown + handle input side by side. Enter or
@@ -1370,11 +1430,24 @@
     })();
 
     // ── Price estimate ──
-    const TIER_PRICES  = { Clip: 79, Scene: 189, Feature: 399 };
+    const TIER_PRICES  = { Scene: 189, Feature: 399 };
     const ADDON_PRICES = {
       'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35,
       'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30,
     };
+    // Add-ons scale with tier (Scene +50%, Feature +150%); a few aren't offered at all on the
+    // Clip (free) tier. Mirrors addonPriceForTier/isAddonAllowedForTier in server.js.
+    const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
+    const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
+    function isAddonAllowedForTier(tier, addon) {
+      return !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
+    }
+    function addonPriceForTier(tier, addon) {
+      const base = ADDON_PRICES[addon];
+      if (base === undefined) return undefined;
+      const multiplier = TIER_ADDON_MULTIPLIERS[tier] || 1;
+      return Math.round(base * multiplier * 100) / 100;
+    }
 
     let appliedCoupons = [<% if (locals.welcomeDiscount) { %>{ code: 'WELCOME', discountType: 'percent', discountValue: <%= welcomeDiscount.percent %>, locked: true }<% } %>]; // [{ code, discountType, discountValue, locked? }]
     const MAX_COUPONS = 3;
@@ -1397,8 +1470,8 @@
       if (!tier || tier === 'Custom') { box.classList.add('hidden'); return; }
 
       const base     = TIER_PRICES[tier] ?? 0;
-      const addons   = selectedAddons.filter(a => ADDON_PRICES[a] !== undefined);
-      const addonSum = addons.reduce((s, a) => s + ADDON_PRICES[a], 0);
+      const addons   = selectedAddons.filter(a => isAddonAllowedForTier(tier, a) && addonPriceForTier(tier, a) !== undefined);
+      const addonSum = addons.reduce((s, a) => s + addonPriceForTier(tier, a), 0);
       const subtotal = base + addonSum;
 
       let discount = 0;
@@ -1412,9 +1485,11 @@
         return { code: c.code, label: c.locked ? 'Welcome discount' : `Coupon (${c.code})`, amt };
       });
 
-      lines.innerHTML = `<div class="flex justify-between text-sm"><span class="text-gray-300">${tier} package</span><span class="text-white">$${base}</span></div>`;
+      const tierLabel = tier === 'Free' ? 'Clip' : tier;
+      const baseLabel = (tier === 'Free' && base === 0) ? 'Free' : `$${base}`;
+      lines.innerHTML = `<div class="flex justify-between text-sm"><span class="text-gray-300">${tierLabel} package</span><span class="text-white">${baseLabel}</span></div>`;
       addons.forEach(a => {
-        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-gray-400">${a}</span><span class="text-amber-400">+$${ADDON_PRICES[a]}</span></div>`;
+        lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-gray-400">${a}</span><span class="text-amber-400">+$${addonPriceForTier(tier, a)}</span></div>`;
       });
       discountLines.forEach(d => {
         lines.innerHTML += `<div class="flex justify-between text-sm"><span class="text-green-400">${d.label}</span><span class="text-green-400">−$${d.amt.toFixed(2)}</span></div>`;
@@ -1422,7 +1497,8 @@
         if (amtEl) amtEl.textContent = `$${d.amt.toFixed(2)}`;
       });
 
-      total.textContent = `$${Math.max(0, subtotal - discount).toFixed(2)}`;
+      const finalTotal = Math.max(0, subtotal - discount);
+      total.textContent = (tier === 'Free' && finalTotal === 0) ? 'Free' : `$${finalTotal.toFixed(2)}`;
       box.classList.remove('hidden');
 
       const incentiveEl = document.getElementById('signup-incentive-amount');
@@ -1574,6 +1650,14 @@
       if (value === 'Custom') budgetField.classList.remove('hidden');
       else                    budgetField.classList.add('hidden');
 
+      // Free tier requires all 3 link slots filled — surface the hint
+      const freeLinksHint = document.getElementById('free-tier-links-hint');
+      if (freeLinksHint) {
+        if (value === 'Free') freeLinksHint.classList.remove('hidden');
+        else                  freeLinksHint.classList.add('hidden');
+      }
+
+      refreshAddonOptionsForTier(value);
       updateEstimate();
     }
 
@@ -1606,6 +1690,7 @@
       const fmAddons   = [].concat(locals.formData.addOns     || []).filter(Boolean);
     %>
     <% if (fmServices.length) { %>[<%= fmServices.map(s => JSON.stringify(s)).join(',') %>].forEach(s => toggleService(s));<% } %>
+    <% if (locals.formData.pricingTier) { %>refreshAddonOptionsForTier(<%= JSON.stringify(formData.pricingTier) %>);<% } %>
     <% if (fmAddons.length)   { %>[<%= fmAddons.map(a => JSON.stringify(a)).join(',') %>].forEach(a => toggleAddon(a));<% } %>
     <% } %>
 
@@ -1621,7 +1706,7 @@
 
     // ── Prefill tier from ?tier= query param ──
     (function () {
-      const TIER_LABELS = { Clip: 'Clip — $79', Scene: 'Scene — $189', Feature: 'Feature — $399', Custom: 'Custom budget' };
+      const TIER_LABELS = { Free: 'Clip — Free', Scene: 'Scene — $189', Feature: 'Feature — $399', Custom: 'Custom budget' };
       const param = new URLSearchParams(window.location.search).get('tier');
       if (!param || !TIER_LABELS[param]) return;
       document.getElementById('pricingTier').value = param;
@@ -1631,6 +1716,8 @@
       const match = document.querySelector(`#cs-tier-menu [data-value="${param}"]`);
       if (match) match.classList.add('active');
       if (param === 'Custom') document.getElementById('budget-field').classList.remove('hidden');
+      if (param === 'Free') document.getElementById('free-tier-links-hint')?.classList.remove('hidden');
+      refreshAddonOptionsForTier(param);
     })();
 
     // ── Submit loading state ──

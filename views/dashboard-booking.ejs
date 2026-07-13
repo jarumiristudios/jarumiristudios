@@ -145,7 +145,7 @@
       <p class="text-sm font-mono text-gray-400 mb-1"><%= booking.crCode %></p>
       <h1 class="text-2xl font-bold text-white"><%= booking.serviceType.join(', ') %></h1>
       <p class="text-gray-500 text-sm mt-1">
-        <%= booking.pricingTier %> package &bull;
+        <%= booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier %> package &bull;
         Submitted <%= new Date(booking.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) %>
       </p>
     </div>
@@ -233,7 +233,7 @@
         <div>
           <p class="field-label">Package</p>
           <p class="field-value">
-            <%= booking.pricingTier %>
+            <%= booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier %>
             <% if (booking.pricingTier === 'Custom' && booking.budget) { %> — <%= booking.budget %><% } %>
           </p>
         </div>
@@ -256,16 +256,22 @@
       </div>
 
       <%
-        const tierBase = TIER_PRICES[booking.pricingTier];
-        if (tierBase) {
-          const addonSum = (booking.addOns || []).reduce((s, a) => s + (ADDON_PRICES[a] || 0), 0);
+        const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
+        const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
+        const isAddonAllowedForTier = (tier, addon) => !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
+        const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+        if (booking.pricingTier !== 'Custom') {
+          const tierBase = TIER_PRICES[booking.pricingTier] || 0;
+          const addonSum = (booking.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(booking.pricingTier, a) ? (addonPriceForTier(booking.pricingTier, a) || 0) : 0), 0);
+          const tierLabel = booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier;
+          const baseLabel = (booking.pricingTier === 'Free' && tierBase === 0) ? 'Free' : `$${tierBase}`;
       %>
       <div class="mt-5 pt-5 border-t border-white/5">
         <p class="field-label mb-3">Estimated total</p>
         <div class="space-y-1.5">
-          <div class="flex justify-between text-sm"><span class="text-gray-400"><%= booking.pricingTier %> package</span><span class="text-gray-200">$<%= tierBase %></span></div>
-          <% (booking.addOns || []).forEach(a => { if (ADDON_PRICES[a]) { %>
-          <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= ADDON_PRICES[a] %></span></div>
+          <div class="flex justify-between text-sm"><span class="text-gray-400"><%= tierLabel %> package</span><span class="text-gray-200"><%= baseLabel %></span></div>
+          <% (booking.addOns || []).forEach(a => { if (isAddonAllowedForTier(booking.pricingTier, a) && addonPriceForTier(booking.pricingTier, a)) { %>
+          <div class="flex justify-between text-sm"><span class="text-gray-500"><%= a %></span><span class="text-amber-400">+$<%= addonPriceForTier(booking.pricingTier, a) %></span></div>
           <% } }) %>
           <% (booking.couponCodes || []).forEach(c => { %>
           <div class="flex justify-between text-sm"><span class="text-green-400"><%= c.code === 'WELCOME' ? 'Welcome discount' : `Coupon (${c.code})` %></span><span class="text-green-400">−$<%= c.amount.toFixed(2) %></span></div>

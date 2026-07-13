@@ -340,7 +340,7 @@
               <div>
                 <p class="text-gray-500 text-xs uppercase tracking-wider mb-1">Package</p>
                 <p class="text-gray-300">
-                  <%= booking.pricingTier %>
+                  <%= booking.pricingTier === 'Free' ? 'Clip' : booking.pricingTier %>
                   <% if (booking.pricingTier === 'Custom' && booking.budget) { %>
                   <span class="text-amber-400">(<%= booking.budget %>)</span>
                   <% } %>
