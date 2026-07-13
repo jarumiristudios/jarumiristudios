@@ -1,8 +1,17 @@
 # Journal
 
+## 2026-07-13 — Track Page Login Invite Card (uncommitted)
+
+**What was built:** Uncommitted. `/track` gained a standalone "Already have an account? Log In" card (`views/track.ejs`), placed right after the two lookup-method forms and before any lookup has run. Links straight to `/login?next=/dashboard`. Distinct from the existing per-booking account nudge (`trackAccountNudge()`, 2026-07-11 entry below) — that one only renders after a successful lookup and only for the specific booking's email, so a returning client who just wants to log in (and doesn't want to hunt down a BR code or retype their name/email first) previously had no way in from this page at all.
+
+**Decisions made:**
+- Rendered unconditionally, ahead of the lookup forms, rather than folded into `trackAccountNudge()` — that helper only runs once a booking is loaded and is scoped to whether that specific email has an account; this card doesn't need a lookup to have happened at all.
+
+---
+
 ## 2026-07-12 — Signup Discount Eligibility Gate Broadened, Booking-Hijack Guard
 
-**What was built:** Uncommitted. Two correctness fixes to the signup welcome discount's abuse gating, prompted by a walkthrough of what happens when an anonymous client submits repeatedly without ever creating an account.
+**What was built:** Shipped in `ebb5766`. Two correctness fixes to the signup welcome discount's abuse gating, prompted by a walkthrough of what happens when an anonymous client submits repeatedly without ever creating an account.
 
 - **`returningEmail` broadened from "ever owned an account" to "ever submitted a booking under this email at all."** The `4db3d62` version of this check (see below) only disqualified an email if a past booking under it had `clientId` set — so a guest who submitted and even fully paid/completed a project as a pure guest (deposit + final invoice paid via emailed Stripe links, no account ever created) still read as "not returning" and could claim the welcome discount on a later signup. Worse, a guest who submitted one unpaid booking, abandoned it, and came back later with a second booking under the same email also still qualified as "new," since the first booking's `clientId` was still `null`. All three call sites that read this check — `POST /signup`, `trackAccountNudge()` (used by `GET /track`), and `GET /hire/success` — now query `BookingRequest.exists({ email, _id: { $ne: booking._id } })` with no `clientId` filter, so *any* prior submission under that email (paid, unpaid, declined, or completed) disqualifies it. Confirmed with the client that a declined/spam-rejected first attempt should still count as disqualifying — no separate carve-out for it.
 - **Booking-hijack / discount-stacking bug closed.** `retroactiveEligible` never checked whether the *booking itself* already had a `clientId`, and `POST /signup` had no ownership guard before this fix — so the same `crCode` could be POSTed to `/signup` repeatedly, each time with a fresh, never-before-seen email. Since `returningEmail` is evaluated against the *new* email's history, not the booking's, each repeat pass read as eligible again, stacking another 15%-off coupon onto the same booking's `discountAmount` and silently reassigning its `clientId` to the newest account. `POST /signup` now redirects to `/login?next=/dashboard&cr=<crCode>` up front if `booking.clientId` is already set, reusing the same "you already have an account, log in to link this" flow the GET pages already show for linked bookings, instead of ever re-processing a claimed booking.
@@ -358,7 +367,7 @@
 
 ---
 
-## 2026-07-09 — Cloudflare R2 File Storage Migration (uncommitted, in progress)
+## 2026-07-09 — Cloudflare R2 File Storage Migration (shipped in `8e13ef4`)
 
 **What was built:** Direct file uploads move off the Railway server's local disk onto Cloudflare R2 (S3-compatible object storage), since Railway's disk is ephemeral/non-persistent across redeploys — a growing correctness risk for an app whose whole product is "receive and deliver client files." Full rollout plan tracked in `Plans/july26-milestone.md`'s R2 section.
 

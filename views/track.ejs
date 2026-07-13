@@ -167,6 +167,16 @@
         </p>
       </div>
 
+      <!-- Account login invite -->
+      <div class="flex items-center justify-between gap-4 p-5 rounded-2xl bg-white/[0.03] border border-white/8 mb-10">
+        <div>
+          <p class="text-white text-base font-semibold">Already have an account?</p>
+        </div>
+        <a href="/login?next=/dashboard" class="flex-shrink-0 h-12 flex items-center justify-center px-6 rounded-full border border-white/15 text-white text-sm font-semibold hover:border-white/40 hover:bg-white/5 transition-colors whitespace-nowrap">
+          Log In
+        </a>
+      </div>
+
       <% if (locals.searched) { %>
 
         <% if (!locals.booking) { %>
