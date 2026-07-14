@@ -449,6 +449,7 @@ async function enforceFreeTierGates(req, res, next) {
   if (!req.session.userId) {
     return res.render("hire", {
       error: "The Clip tier requires a free account — sign up or log in first.",
+      needsSignup: true,
       formData: req.body,
       loggedInUser: null,
       lastBooking: null,
@@ -1449,25 +1450,41 @@ function safeSignupReturnTo(returnTo, crCode) {
   return `/hire/success?cr=${crCode}`;
 }
 
+app.get("/signup", (req, res) => {
+  if (req.session.userId) return res.redirect("/dashboard");
+  res.render("signup", { next: req.query.next || "/dashboard", error: null });
+});
+
 app.post("/signup", async (req, res) => {
-  const { email, password, crCode, returnTo } = req.body;
+  const { email, password, crCode, returnTo, next } = req.body;
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  const backTo = () => safeSignupReturnTo(returnTo, crCode);
+
+  // The standalone /signup page (no crCode) is for a genuinely brand-new client with no booking
+  // to attach yet — it renders its own inline error instead of bouncing through the
+  // multi-purpose hire/track redirect dance below, which exists only to return embedded-form
+  // submitters to whichever page they submitted from.
+  const standalone = !crCode;
+  const backTo = (error) => standalone
+    ? res.render("signup", { next: next && next.startsWith("/") ? next : "/dashboard", error })
+    : res.redirect(safeSignupReturnTo(returnTo, crCode));
 
   if (!email || !emailRe.test(email) || !password || password.length < 8) {
-    return res.redirect(backTo());
+    return backTo("Please enter a valid email and a password of at least 8 characters.");
   }
 
-  const booking = await BookingRequest.findOne({ crCode: crCode?.toUpperCase().trim() });
-  if (!booking) return res.redirect("/hire");
+  let booking = null;
+  if (!standalone) {
+    booking = await BookingRequest.findOne({ crCode: crCode.toUpperCase().trim() });
+    if (!booking) return res.redirect("/hire");
 
-  // A booking already linked to an account can't be re-signed-up-for — without this, POSTing
-  // here repeatedly with fresh, never-before-seen emails would hijack the booking (clientId just
-  // gets overwritten) and stack a fresh 15% coupon onto it every time, since retroactiveEligible
-  // only checks the new email's own history, not whether this booking already has an owner.
-  // The real next step for an already-linked booking is logging into the account that owns it.
-  if (booking.clientId) {
-    return res.redirect(`/login?next=/dashboard&cr=${encodeURIComponent(crCode)}`);
+    // A booking already linked to an account can't be re-signed-up-for — without this, POSTing
+    // here repeatedly with fresh, never-before-seen emails would hijack the booking (clientId just
+    // gets overwritten) and stack a fresh 15% coupon onto it every time, since retroactiveEligible
+    // only checks the new email's own history, not whether this booking already has an owner.
+    // The real next step for an already-linked booking is logging into the account that owns it.
+    if (booking.clientId) {
+      return res.redirect(`/login?next=/dashboard&cr=${encodeURIComponent(crCode)}`);
+    }
   }
 
   try {
@@ -1480,7 +1497,7 @@ app.post("/signup", async (req, res) => {
     // guests who already paid and completed a project without ever creating an account.
     const returningEmail = await BookingRequest.exists({
       email: normalizedEmail,
-      _id: { $ne: booking._id },
+      ...(booking ? { _id: { $ne: booking._id } } : {}),
     });
 
     // If the triggering booking hasn't been priced yet, apply the discount to it directly instead
@@ -1489,27 +1506,30 @@ app.post("/signup", async (req, res) => {
     // booking has an agreedPrice, editing couponCodes/discountAmount has zero real billing effect
     // (Stripe invoices are keyed off agreedPrice alone — see createDepositInvoice), so that's the
     // natural, abuse-proof cutoff: nobody can sign up right before paying to shave off 15%.
-    const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
+    // Standalone signups have no booking yet, so there's nothing to apply this to — they still
+    // get the discountPercent/discountExpiresAt window below to claim on their first booking.
     let discountAppliedRetroactively = false;
-
-    if (retroactiveEligible) {
-      const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + addonTotalForTier(booking.pricingTier, booking.addOns);
-      const running = subtotal - (booking.discountAmount || 0);
-      const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
-      if (amount > 0) {
-        booking.couponCodes.push({ code: SIGNUP_DISCOUNT_CODE, discountType: "percent", discountValue: SIGNUP_DISCOUNT_PERCENT, amount });
-        booking.discountAmount = (booking.discountAmount || 0) + amount;
-        discountAppliedRetroactively = true;
+    if (booking) {
+      const retroactiveEligible = !returningEmail && !booking.agreedPrice && !["declined", "completed"].includes(booking.status);
+      if (retroactiveEligible) {
+        const subtotal = (TIER_PRICES[booking.pricingTier] || 0) + addonTotalForTier(booking.pricingTier, booking.addOns);
+        const running = subtotal - (booking.discountAmount || 0);
+        const amount = calcPercentDiscount(running, SIGNUP_DISCOUNT_PERCENT);
+        if (amount > 0) {
+          booking.couponCodes.push({ code: SIGNUP_DISCOUNT_CODE, discountType: "percent", discountValue: SIGNUP_DISCOUNT_PERCENT, amount });
+          booking.discountAmount = (booking.discountAmount || 0) + amount;
+          discountAppliedRetroactively = true;
+        }
       }
     }
 
     const user = new User({
       email: normalizedEmail,
       password,
-      name: booking.name || "",
-      location: booking.location || "",
-      bookings: [booking._id],
-      notificationPreferences: { emailUpdates: booking.emailConsent },
+      name: booking?.name || "",
+      location: booking?.location || "",
+      bookings: booking ? [booking._id] : [],
+      notificationPreferences: { emailUpdates: booking ? booking.emailConsent : true },
       ...(returningEmail ? {} : {
         discountPercent: SIGNUP_DISCOUNT_PERCENT,
         discountExpiresAt: new Date(Date.now() + SIGNUP_DISCOUNT_WINDOW_MS),
@@ -1517,18 +1537,20 @@ app.post("/signup", async (req, res) => {
       }),
     });
     await user.save();
-    booking.clientId = user._id;
-    await booking.save();
+    if (booking) {
+      booking.clientId = user._id;
+      await booking.save();
+    }
     await linkOrphanedBookings(user);
     req.session.userId = user._id.toString();
-    res.redirect("/dashboard");
+    res.redirect(standalone && next && next.startsWith("/") ? next : "/dashboard");
   } catch (err) {
     if (err.code === 11000) {
       // Email already taken — send back to the originating page with an error hint
-      return res.redirect(backTo());
+      return backTo(standalone ? "That email is already registered." : undefined);
     }
     console.error("Signup error:", err);
-    res.redirect(backTo());
+    return backTo(standalone ? "Something went wrong. Please try again." : undefined);
   }
 });
 

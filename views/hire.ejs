@@ -207,7 +207,7 @@
       <div class="flex items-center gap-3">
         <a href="/login"
            class="hidden md:inline-flex text-sm font-semibold px-5 py-3.5 rounded-full border border-white/15 text-white hover:border-white/40 transition-colors capitalize">
-          Log In
+          Log In / Sign Up
         </a>
         <a href="/hire"
            class="text-sm font-semibold px-7 py-3.5 rounded-full bg-amber-400 text-black hover:bg-amber-300 transition-colors capitalize">
@@ -245,7 +245,7 @@
            const FREE_TIER_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
            const TIER_ADDON_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 };
            const isAddonAllowedForTier = (tier, addon) => !(tier === 'Free' && FREE_TIER_EXCLUDED_ADDONS.includes(addon));
-           const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.round(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1) * 100) / 100;
+           const addonPriceForTier = (tier, addon) => ADDON_PRICES[addon] === undefined ? undefined : Math.ceil(ADDON_PRICES[addon] * (TIER_ADDON_MULTIPLIERS[tier] || 1));
            if (locals.pricingTier && pricingTier !== 'Custom') {
              const base = TIER_PRICES[pricingTier] || 0;
              const addonTotal = (locals.addOns || []).reduce((s, a) => s + (isAddonAllowedForTier(pricingTier, a) ? (addonPriceForTier(pricingTier, a) || 0) : 0), 0);
@@ -353,6 +353,12 @@
 
       <% if (locals.error) { %>
       <script>document.addEventListener('DOMContentLoaded', function(){ showToast('Something went wrong', '<%= error.replace(/'/g, "\\'") %>', 'error'); });</script>
+      <% } %>
+
+      <% if (locals.needsSignup) { %>
+      <p class="text-center text-sm text-gray-400 mb-6">
+        <a href="/signup?next=/hire" class="text-amber-400 hover:text-amber-300 font-semibold">Create a free account</a> to submit a Clip project.
+      </p>
       <% } %>
 
       <% if (locals.loggedInUser) { %>
@@ -843,7 +849,7 @@
         <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Estimated total</p>
         <div id="estimate-lines" class="space-y-1.5 mb-3"></div>
         <% if (!locals.loggedInUser) { %>
-        <div class="rounded-md border border-amber-400/30 bg-amber-400/10 px-3.5 py-3 flex items-center gap-2.5 mb-3">
+        <div id="signup-incentive-banner" class="hidden rounded-md border border-amber-400/30 bg-amber-400/10 px-3.5 py-3 flex items-center gap-2.5 mb-3">
           <iconify-icon icon="material-symbols-light:percent-discount" width="30" height="30" class="text-amber-400 shrink-0"></iconify-icon>
           <div>
             <p class="text-sm font-semibold text-amber-300 mb-0.5">Get 15% off this project</p>
@@ -1446,7 +1452,7 @@
       const base = ADDON_PRICES[addon];
       if (base === undefined) return undefined;
       const multiplier = TIER_ADDON_MULTIPLIERS[tier] || 1;
-      return Math.round(base * multiplier * 100) / 100;
+      return Math.ceil(base * multiplier);
     }
 
     let appliedCoupons = [<% if (locals.welcomeDiscount) { %>{ code: 'WELCOME', discountType: 'percent', discountValue: <%= welcomeDiscount.percent %>, locked: true }<% } %>]; // [{ code, discountType, discountValue, locked? }]
@@ -1503,6 +1509,9 @@
 
       const incentiveEl = document.getElementById('signup-incentive-amount');
       if (incentiveEl) incentiveEl.textContent = `$${(Math.round(running * 15) / 100).toFixed(2)}`;
+      // Clip already requires an account before it can even be submitted, so the "submit as
+      // guest, then sign up to claim 15% off" flow this banner advertises never applies to it.
+      document.getElementById('signup-incentive-banner')?.classList.toggle('hidden', running <= 0 || tier === 'Free');
     }
 
     // ── Coupon chips ──
