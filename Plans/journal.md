@@ -1,8 +1,33 @@
 # Journal
 
-## 2026-07-13 — Track Page Login Invite Card (uncommitted)
+## 2026-07-13 — Interactive Pricing Card Add-On Price Display (uncommitted)
 
-**What was built:** Uncommitted. `/track` gained a standalone "Already have an account? Log In" card (`views/track.ejs`), placed right after the two lookup-method forms and before any lookup has run. Links straight to `/login?next=/dashboard`. Distinct from the existing per-booking account nudge (`trackAccountNudge()`, 2026-07-11 entry below) — that one only renders after a successful lookup and only for the specific booking's email, so a returning client who just wants to log in (and doesn't want to hunt down a BR code or retype their name/email first) previously had no way in from this page at all.
+**What was built:** Uncommitted. `views/index.ejs`'s public `#pricing` section previously showed a single flat "from $X" add-on price list with a static footnote explaining the Scene/Feature multipliers — disconnected from the real tier-scaled add-on pricing shipped earlier the same day (`f1b8718`, next entry below). Add-on prices are now computed client-side and shown live: clicking any of the three pricing cards (`.pricing-card`, new class) highlights it (`tier-selected`, amber ring) and updates every add-on's displayed price via `selectPricingTier(tier, card)` — mirroring the server's `TIER_ADDON_MULTIPLIERS`/`FREE_TIER_EXCLUDED_ADDONS` constants in a small inline `<script>` (`HOME_ADDON_PRICES`/`HOME_TIER_MULTIPLIERS`/`HOME_FREE_EXCLUDED_ADDONS`) — showing "Not included" (in place of a price) for the three add-ons excluded on the Free/Clip tier. Defaults to Scene selected on page load, matching the "Popular" badge.
+
+**Decisions made:**
+- Add-on price math duplicated in an inline `<script>` rather than exposed via an API — the landing page's pricing section is static server-rendered markup with no existing round trip, and duplicating three small constant objects is cheaper than adding an endpoint just to avoid it.
+
+---
+
+## 2026-07-13 — Free Tier Replaces $79 Clip Package, Tier-Scaled Add-On Pricing
+
+**What was built:** Shipped in `f1b8718`.
+
+- **Clip package replaced with a gated free tier.** The old $79 Clip package is no longer offered; `pricingTier: "Free"` (still labeled "Clip" in the UI) is a new $0 tier with real gating instead of an open flat price — requires a logged-in account (`enforceFreeTierGates`, `server.js`, a new middleware run before `preCrCode`/multer on `POST /hire`, same cost-nothing-if-blocked pattern as `enforceGuestSubmissionQuota`), capped at one Free-tier submission per rolling 7 days per client (`FREE_TIER_SUBMISSION_WINDOW_MS`), and requires exactly 3 platform links (every other tier still just wants 1-3) so admin can manually vet audience reach before accepting. The historical `"Clip"` enum value stays on `BookingRequest.pricingTier`/`PRICING_TIERS` for old $79 bookings and revenue-by-tier analytics history — new submissions can only ever create `"Free"`, never a fresh `"Clip"`.
+- **Testimonial-or-gallery-rights obligation.** Completing a Free-tier booking sets `User.pendingTestimonialObligation`/`pendingTestimonialBookingId` (`notifyStatusChange()`, `server.js`) — the client is blocked from submitting another Free-tier request until they either write a testimonial or grant gallery/distribution rights for the completed one (`POST /dashboard/booking/:id/testimonial`, new route; either field alone satisfies it), which clears the obligation. Surfaced on `/dashboard` as an amber banner with an inline form when pending. Only one obligation can ever be pending at a time by construction — a new Free submission is blocked while one's outstanding, so a second can't be created to stack.
+- **Add-on prices now scale by tier.** `addonPriceForTier()`/`addonTotalForTier()`/`isAddonAllowedForTier()` (`server.js`) replace flat `ADDON_PRICES` lookups everywhere pricing is computed — `booking.txt`, the admin new-booking notification, the signup-discount retroactive preview on both `/hire/success` and `/track`, and `/hire`'s own POST handler. Scene is +50%, Feature +150%; Free and Custom stay at the 1x base. Captions, Intro/outro bumper, and Extra revision aren't offered on Free at all — `allowedAddOns` filters them server-side before persisting even if a client-side glitch let one through the form.
+- **Bug fixes from the tier rename.** Admin/associate-facing pricing logic previously branched on "does `TIER_PRICES` have an entry for this tier" to decide "unpriced, don't show an add-on breakdown" (the `Custom` case) — since the trimmed `TIER_PRICES` object also has no entry for `Free`, it silently fell into the same unpriced branch across the client-facing estimate, the deposit-amount prefill, and admin's new-booking notification, hiding real (if $0-base) add-on charges. Fixed by branching on `pricingTier !== "Custom"` explicitly instead, now that `Free` legitimately prices at $0 base + a real add-on total.
+
+**Decisions made:**
+- Old `"Clip"` enum value kept rather than migrated or removed — it's load-bearing for every already-shipped $79 booking and for revenue-by-tier analytics history; `"Free"` is a deliberately distinct value so a query or report can't accidentally conflate the two.
+- Free tier requires an account rather than being guest-eligible — both the weekly cap and the testimonial obligation need to key off something a client can't just clear (an anonymous visitor cookie can), the same reasoning `hasCompletedProjectHistory`'s guest-vs-account trust tiering already established elsewhere in the app.
+- Testimonial/gallery-rights modeled as an "either satisfies it" pair, not two separate requirements — it's a trade for a free edit, not a mandatory content contribution; a client uncomfortable giving a public testimonial can grant rights instead, or vice versa.
+
+---
+
+## 2026-07-13 — Track Page Login Invite Card
+
+**What was built:** Shipped in `6adfd74`. `/track` gained a standalone "Already have an account? Log In" card (`views/track.ejs`), placed right after the two lookup-method forms and before any lookup has run. Links straight to `/login?next=/dashboard`. Distinct from the existing per-booking account nudge (`trackAccountNudge()`, 2026-07-11 entry below) — that one only renders after a successful lookup and only for the specific booking's email, so a returning client who just wants to log in (and doesn't want to hunt down a BR code or retype their name/email first) previously had no way in from this page at all.
 
 **Decisions made:**
 - Rendered unconditionally, ahead of the lookup forms, rather than folded into `trackAccountNudge()` — that helper only runs once a booking is loaded and is scoped to whether that specific email has an account; this card doesn't need a lookup to have happened at all.

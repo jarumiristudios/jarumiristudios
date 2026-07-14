@@ -55,6 +55,8 @@
     }
     .nav-link:hover::after { width: 100%; }
     html { scroll-behavior: smooth; }
+    .pricing-card { cursor: pointer; }
+    .pricing-card.tier-selected { box-shadow: 0 0 0 2px rgba(245,158,11,0.6); }
   </style>
 
   <script type="application/ld+json">
@@ -135,6 +137,31 @@
       mobileMenu.classList.add('hidden');
       bars.forEach(b => { b.style.transform = ''; b.style.opacity = ''; });
     }
+
+    // ── Add-on pricing, driven by clicking a package card above ──
+    const HOME_ADDON_PRICES = { 'Rush delivery': 50, 'Platform cut': 30, 'Captions': 35, 'Censored preview': 45, 'Intro/outro bumper': 75, 'Extra revision': 30 };
+    const HOME_FREE_EXCLUDED_ADDONS = ['Captions', 'Intro/outro bumper', 'Extra revision'];
+    const HOME_TIER_MULTIPLIERS = { Scene: 1.5, Feature: 2.5 }; // Free (Clip) defaults to 1x
+
+    function selectPricingTier(tier, card) {
+      document.querySelectorAll('.pricing-card').forEach(c => c.classList.remove('tier-selected'));
+      if (card) card.classList.add('tier-selected');
+      Object.keys(HOME_ADDON_PRICES).forEach(addon => {
+        const el = document.getElementById(`home-addon-price-${addon}`);
+        if (!el) return;
+        if (tier === 'Free' && HOME_FREE_EXCLUDED_ADDONS.includes(addon)) {
+          el.textContent = 'Not included';
+          el.classList.remove('text-amber-400');
+          el.classList.add('text-gray-600');
+        } else {
+          const price = Math.round(HOME_ADDON_PRICES[addon] * (HOME_TIER_MULTIPLIERS[tier] || 1) * 100) / 100;
+          el.textContent = `$${price}`;
+          el.classList.add('text-amber-400');
+          el.classList.remove('text-gray-600');
+        }
+      });
+    }
+    selectPricingTier('Scene', document.querySelectorAll('.pricing-card')[1]);
   </script>
 
   <!-- ═══════════════════════════════ HERO ═══════════════════════════════ -->
@@ -347,7 +374,7 @@
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
 
         <!-- Clip -->
-        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col">
+        <div class="pricing-card p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col" onclick="selectPricingTier('Free', this)">
           <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Clip</p>
           <p class="text-4xl font-bold text-white mb-1">Free</p>
           <p class="text-gray-600 text-sm mb-2">per project</p>
@@ -365,7 +392,7 @@
         </div>
 
         <!-- Scene — highlighted -->
-        <div class="p-7 rounded-2xl bg-amber-400/[0.07] border border-amber-400/30 card-hover flex flex-col relative">
+        <div class="pricing-card p-7 rounded-2xl bg-amber-400/[0.07] border border-amber-400/30 card-hover flex flex-col relative" onclick="selectPricingTier('Scene', this)">
           <span class="absolute top-5 right-5 text-[10px] font-bold tracking-widest uppercase bg-amber-400 text-black px-2.5 py-1 rounded-full">Popular</span>
           <p class="text-xs font-semibold tracking-widest text-amber-400 uppercase mb-3">Scene</p>
           <p class="text-4xl font-bold text-white mb-1">$189</p>
@@ -385,7 +412,7 @@
         </div>
 
         <!-- Feature -->
-        <div class="p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col">
+        <div class="pricing-card p-7 rounded-2xl bg-white/[0.03] border border-white/8 card-hover flex flex-col" onclick="selectPricingTier('Feature', this)">
           <p class="text-xs font-semibold tracking-widest text-gray-500 uppercase mb-3">Feature</p>
           <p class="text-4xl font-bold text-white mb-1">$399</p>
           <p class="text-gray-600 text-sm mb-2">per project</p>
@@ -414,7 +441,7 @@
             <div>
               <p class="text-white text-sm font-medium">Rush delivery</p>
               <p class="text-gray-500 text-xs mt-0.5">Shave 2 days off turnaround</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $50</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Rush delivery">$50</p>
             </div>
           </div>
           <div class="flex items-start gap-3">
@@ -422,7 +449,7 @@
             <div>
               <p class="text-white text-sm font-medium">Platform cut</p>
               <p class="text-gray-500 text-xs mt-0.5">Portrait or square crop, per variant</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $30</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Platform cut">$30</p>
             </div>
           </div>
           <div class="flex items-start gap-3">
@@ -430,8 +457,7 @@
             <div>
               <p class="text-white text-sm font-medium">Captions / subtitles</p>
               <p class="text-gray-500 text-xs mt-0.5">Burned-in or separate file</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $35</p>
-              <p class="text-gray-600 text-[11px] mt-0.5">Not available on Clip</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Captions">$35</p>
             </div>
           </div>
           <div class="flex items-start gap-3">
@@ -439,7 +465,7 @@
             <div>
               <p class="text-white text-sm font-medium">Censored preview</p>
               <p class="text-gray-500 text-xs mt-0.5">Blurred version for social promos</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $45</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Censored preview">$45</p>
             </div>
           </div>
           <div class="flex items-start gap-3">
@@ -447,8 +473,7 @@
             <div>
               <p class="text-white text-sm font-medium">Intro / outro bumper</p>
               <p class="text-gray-500 text-xs mt-0.5">Custom animated brand bumper</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $75</p>
-              <p class="text-gray-600 text-[11px] mt-0.5">Not available on Clip</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Intro/outro bumper">$75</p>
             </div>
           </div>
           <div class="flex items-start gap-3">
@@ -456,12 +481,11 @@
             <div>
               <p class="text-white text-sm font-medium">Extra revision round</p>
               <p class="text-gray-500 text-xs mt-0.5">One additional consolidated batch</p>
-              <p class="text-amber-400 text-xs font-semibold mt-1">from $30</p>
-              <p class="text-gray-600 text-[11px] mt-0.5">Not available on Clip</p>
+              <p class="text-amber-400 text-xs font-semibold mt-1" id="home-addon-price-Extra revision">$30</p>
             </div>
           </div>
         </div>
-        <p class="text-gray-600 text-xs mt-6">Add-on prices shown are the Clip-tier base rate — Scene is +50% and Feature is +150% on top of these.</p>
+        <p class="text-gray-600 text-xs mt-6">Click a package above to see add-on prices for that tier. Custom projects are quoted individually.</p>
       </div>
 
       <div class="mt-8 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">

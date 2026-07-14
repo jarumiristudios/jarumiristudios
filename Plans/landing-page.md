@@ -38,12 +38,12 @@ Design: Clean, minimal, lots of whitespace
 
 ## 6. Pricing
 - In-page section, id `#pricing` (no standalone `/pricing` route)
-- 3 tiers, each linking to `/hire?tier=<name>` to preselect on the request form:
-  - **Clip** — $79
+- 3 cards, each linking to `/hire?tier=<name>` to preselect on the request form (2026-07-13, `f1b8718`: the old flat $79 Clip package was replaced by a gated free tier — see `pages.md`'s `/hire` row and `Plans/journal.md`'s "Free Tier Replaces $79 Clip Package" entry for the account/weekly-cap/3-platform-link/testimonial gating):
+  - **Clip** — Free (stored as `pricingTier: "Free"`; the old `"Clip"` enum value is kept only for historical $79 bookings)
   - **Scene** — $189 (marked "Popular")
   - **Feature** — $399 — unlimited/multi-part, custom LUT, sound design, motion graphics, 4 revisions, 10 days
   - Plus a **Custom** option on the `/hire` form itself for "name your budget"
-- Add-ons strip below the tiers — stack on any tier: Rush delivery (+$50), Platform cut (+$30), Captions (+$35), Censored preview (+$45), Intro/outro bumper (+$75), Extra revision (+$30)
+- Add-ons strip below the tiers now scales by tier instead of a flat rate — Scene is +50%, Feature +150% on the base prices (Rush delivery $50, Platform cut $30, Captions $35, Censored preview $45, Intro/outro bumper $75, Extra revision $30); Captions, Intro/outro bumper, and Extra revision aren't offered on Free at all. Clicking a pricing card (`.pricing-card`, `selectPricingTier()`) highlights it and live-updates the displayed add-on prices for that tier (2026-07-13, uncommitted) — Scene selected by default on load.
 - Coupon codes (percent or fixed amount, admin-managed) can be applied at checkout on `/hire`
 
 ---
