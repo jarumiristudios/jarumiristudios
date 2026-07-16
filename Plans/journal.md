@@ -1,8 +1,37 @@
 # Journal
 
-## 2026-07-13 — Interactive Pricing Card Add-On Price Display (uncommitted)
+## 2026-07-15 — Ran R2 Upload Migration Against Production
 
-**What was built:** Uncommitted. `views/index.ejs`'s public `#pricing` section previously showed a single flat "from $X" add-on price list with a static footnote explaining the Scene/Feature multipliers — disconnected from the real tier-scaled add-on pricing shipped earlier the same day (`f1b8718`, next entry below). Add-on prices are now computed client-side and shown live: clicking any of the three pricing cards (`.pricing-card`, new class) highlights it (`tier-selected`, amber ring) and updates every add-on's displayed price via `selectPricingTier(tier, card)` — mirroring the server's `TIER_ADDON_MULTIPLIERS`/`FREE_TIER_EXCLUDED_ADDONS` constants in a small inline `<script>` (`HOME_ADDON_PRICES`/`HOME_TIER_MULTIPLIERS`/`HOME_FREE_EXCLUDED_ADDONS`) — showing "Not included" (in place of a price) for the three add-ons excluded on the Free/Clip tier. Defaults to Scene selected on page load, matching the "Popular" badge.
+**What was built:** No code changes. Confirmed the 5 R2 env vars were already mirrored onto the Railway `jarumiristudios` service (`railway variables --kv` matched local `.env` exactly), then ran `scripts/migrate-uploads-to-r2.js upload`/`backfill`/`verify` against production, the last open step from `Plans/july26-milestone.md`'s R2 migration section.
+
+- **`railway run` doesn't reach the container.** The script's own header comment said to run it via `railway run node scripts/...`, but `railway run` executes the command *locally* with Railway's env vars injected — it has no access to the container's persistent `/app/uploads` volume, which is where the script actually needs to read from. Used `railway ssh` instead (installed/registered a local ed25519 keypair via `railway ssh keys add`, since none existed) to exec directly inside the running container.
+- **Windows/Git Bash path mangling.** Git Bash's automatic POSIX-path conversion rewrote `/app/uploads` into a Windows path mid-command when passed through `railway ssh --`. Fixed by prefixing invocations with `MSYS_NO_PATHCONV=1`.
+- **Result: production had zero legacy local files.** `upload` found 0 paths under `/app/uploads` (only empty `_archive/<crCode>` dirs remained — `lost+found` is an ext4 artifact, not app data), `backfill` updated 0 records, `verify` confirmed 0 `BookingRequest` docs still reference `backend:"local"`. Two `Message` docs still carry `backend:"local"`, but they're empty attachment placeholders (`backend` defaults to `"local"` per `models/shared/fileMetadata.js`; these two have no `storedName`/`size`/`mimetype` at all) rather than real files — not something this script is meant to touch.
+
+**Decisions made:**
+- Treated the milestone doc's bake-period item as moot rather than waiting it out — a bake period exists to de-risk a live cutover of files still being actively read from local disk, but there was never any such cutover here since nothing was left on `backend:"local"` by the time this ran. Legacy local-disk code (soft-archive/bulk-archive/restore) is now safe to remove whenever convenient, pending a quick re-check of `backend:"local"` counts first in case new activity landed since.
+- Left `scripts/reorganize-r2-folders.js --execute` (folder-key tidiness for pre-existing flat-keyed objects) as a separate, still-open item — it wasn't part of what was asked for this session and isn't required for correctness.
+
+---
+
+## 2026-07-14 — Standalone Signup Page for Brand-New Clients
+
+**What was built:** Shipped in `ebb3885`. The only way to create a `User` account was previously `POST /signup` with a required `crCode` tying the new account to an existing booking — but the Free/Clip tier gate (`enforceFreeTierGates`, `f1b8718`) requires a logged-in account just to submit a booking in the first place, a catch-22 for a genuinely brand-new visitor with no booking yet. `POST /signup` now treats `crCode` as optional (`standalone = !crCode`) — without one it skips the booking lookup, booking-linking, and retroactive-discount logic entirely and just creates a bare `User` (still granted the normal `discountPercent`/`discountExpiresAt` welcome-discount window, redeemable on their first real `/hire` submission). New `GET`/`POST`-backed `/signup` page (`views/signup.ejs`, mirrors `login.ejs`'s layout/style) takes an optional `?next=` redirect target validated as an internal path (`next.startsWith("/")`), rather than the `returnTo`/`crCode` whitelist the embedded-form flow uses. Linked from `/login`'s "sign up" line and from the Free-tier account-required error on `/hire` (`needsSignup` flag renders a "Create a free account" prompt above the form). The nav's "Log In" pill relabeled to "Log In / Sign Up" across `index.ejs`/`hire.ejs`/`career.ejs`/`terms.ejs`.
+
+**Decisions made:**
+- Standalone signups render their own inline error (`backTo(error)` re-renders `signup.ejs`) rather than going through `safeSignupReturnTo`'s redirect dance — that whitelist exists only to send embedded-form submitters (on `/hire/success`/`/track`) back to whichever page they came from, which doesn't apply to a page that only signup itself renders.
+
+---
+
+## 2026-07-14 — Round Add-On Prices Up to Whole Cents
+
+**What was built:** Shipped in `669c548`. `addonPriceForTier()` (`server.js`, plus its duplicated inline copies in `admin/booking.ejs`, `associate/booking.ejs`, `dashboard-booking.ejs`, `dashboard-new.ejs`, `dashboard.ejs`, and the landing page's inline pricing script) rounded the tier-scaled add-on price (base × 1.5/2.5, from the `f1b8718` tier-pricing work) to the nearest cent via `Math.round(... * 100) / 100`, which rounds a X.5-cent amount down half the time. Switched to `Math.ceil(base * multiplier)`, which always rounds a fractional result up instead of risking undercharging.
+
+---
+
+## 2026-07-13 — Interactive Pricing Card Add-On Price Display
+
+**What was built:** Shipped in `e1ee335`. `views/index.ejs`'s public `#pricing` section previously showed a single flat "from $X" add-on price list with a static footnote explaining the Scene/Feature multipliers — disconnected from the real tier-scaled add-on pricing shipped earlier the same day (`f1b8718`, next entry below). Add-on prices are now computed client-side and shown live: clicking any of the three pricing cards (`.pricing-card`, new class) highlights it (`tier-selected`, amber ring) and updates every add-on's displayed price via `selectPricingTier(tier, card)` — mirroring the server's `TIER_ADDON_MULTIPLIERS`/`FREE_TIER_EXCLUDED_ADDONS` constants in a small inline `<script>` (`HOME_ADDON_PRICES`/`HOME_TIER_MULTIPLIERS`/`HOME_FREE_EXCLUDED_ADDONS`) — showing "Not included" (in place of a price) for the three add-ons excluded on the Free/Clip tier. Defaults to Scene selected on page load, matching the "Popular" badge.
 
 **Decisions made:**
 - Add-on price math duplicated in an inline `<script>` rather than exposed via an API — the landing page's pricing section is static server-rendered markup with no existing round trip, and duplicating three small constant objects is cheaper than adding an endpoint just to avoid it.

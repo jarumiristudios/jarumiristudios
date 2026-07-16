@@ -8,7 +8,7 @@ Design: Clean, minimal, lots of whitespace
 ## 1. Navbar
 - Logo: Jarumiri Studios
 - Links (in-page anchors): Services, Pricing, About, Careers (mobile drawer adds How It Works)
-- "Log In" → `/login`
+- "Log In / Sign Up" → `/login` (2026-07-14, `ebb3885`: previously just "Log In"; `/login` itself now links out to a standalone `/signup` page for brand-new visitors instead of pointing them at `/hire`)
 - CTA button: "Book A Project" → `/hire`
 
 ---
@@ -43,7 +43,7 @@ Design: Clean, minimal, lots of whitespace
   - **Scene** — $189 (marked "Popular")
   - **Feature** — $399 — unlimited/multi-part, custom LUT, sound design, motion graphics, 4 revisions, 10 days
   - Plus a **Custom** option on the `/hire` form itself for "name your budget"
-- Add-ons strip below the tiers now scales by tier instead of a flat rate — Scene is +50%, Feature +150% on the base prices (Rush delivery $50, Platform cut $30, Captions $35, Censored preview $45, Intro/outro bumper $75, Extra revision $30); Captions, Intro/outro bumper, and Extra revision aren't offered on Free at all. Clicking a pricing card (`.pricing-card`, `selectPricingTier()`) highlights it and live-updates the displayed add-on prices for that tier (2026-07-13, uncommitted) — Scene selected by default on load.
+- Add-ons strip below the tiers now scales by tier instead of a flat rate — Scene is +50%, Feature +150% on the base prices (Rush delivery $50, Platform cut $30, Captions $35, Censored preview $45, Intro/outro bumper $75, Extra revision $30); Captions, Intro/outro bumper, and Extra revision aren't offered on Free at all. Clicking a pricing card (`.pricing-card`, `selectPricingTier()`) highlights it and live-updates the displayed add-on prices for that tier (2026-07-13, `e1ee335`) — Scene selected by default on load. Displayed add-on prices are rounded up to the nearest whole cent (`Math.ceil`, 2026-07-14, `669c548`) rather than to the nearest cent, to avoid undercharging on the X.5-cent amounts the 1.5x/2.5x tier multipliers can produce.
 - Coupon codes (percent or fixed amount, admin-managed) can be applied at checkout on `/hire`
 
 ---
