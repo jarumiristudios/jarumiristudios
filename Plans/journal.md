@@ -1,5 +1,16 @@
 # Journal
 
+## 2026-07-16 — Ran R2 Folder-Reorganization Migration Against Production, Hardened Script for Missing Objects
+
+**What was built:** `scripts/reorganize-r2-folders.js` run against production with `--execute`, the last open item from `Plans/july26-milestone.md`'s R2 migration section. A dry run first found exactly one leftover flat-keyed object (a chat attachment on `Message`, booking `I07-TI2-QJK`). The real `--execute` pass failed to copy it — "the specified key does not exist" — because that booking had been client-hard-deleted (`filesDeleted: true`, `archived: true`) in the time between building the plan and executing it; the client's hard-delete flow wipes the booking's entire R2 prefix but deliberately leaves `Message.attachments[]` metadata alone (the read path already gates on `filesDeleted` to show a "no longer available" placeholder rather than serving the file). Copy-before-delete meant the failed copy aborted cleanly with nothing corrupted or lost — production simply has zero real flat-keyed objects left.
+
+- **Script hardened against this exact case.** `main()`'s per-item loop (`scripts/reorganize-r2-folders.js`) now does a `headObject(oldKey)` existence check before attempting `copyObject` — if the source is already gone, it logs `SKIP` and moves on (tracked in a new `missing` counter) instead of a scary `FAIL`. Same non-issue, but a future re-run against any new pre-migration leftovers won't misreport a legitimate already-deleted source as an error.
+
+**Decisions made:**
+- Left the dangling `Message.storageKey` reference untouched rather than trying to null it out — the app's own `filesDeleted`-gated read path already treats it correctly, and scrubbing it would be scope creep beyond what this cosmetic migration script is for.
+
+---
+
 ## 2026-07-15 — Ran R2 Upload Migration Against Production
 
 **What was built:** No code changes. Confirmed the 5 R2 env vars were already mirrored onto the Railway `jarumiristudios` service (`railway variables --kv` matched local `.env` exactly), then ran `scripts/migrate-uploads-to-r2.js upload`/`backfill`/`verify` against production, the last open step from `Plans/july26-milestone.md`'s R2 migration section.

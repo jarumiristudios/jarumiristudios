@@ -127,7 +127,18 @@ async function main() {
 
   let migrated = 0;
   let failed = 0;
+  let missing = 0;
   for (const [oldKey, { newKey, refs }] of toMigrate) {
+    try {
+      await headObject(oldKey);
+    } catch {
+      // Source object already gone — most likely a client hard-delete wiped it after this plan
+      // was built. The DB's dangling storageKey is expected in that case (filesDeleted gates the
+      // UI's read path instead), so there's nothing to migrate here; leave the reference as-is.
+      missing++;
+      console.warn(`SKIP ${oldKey}: source object no longer exists in R2, leaving DB reference as-is.`);
+      continue;
+    }
     try {
       await copyObject(oldKey, newKey);
       await headObject(newKey); // verify the copy landed before touching anything else
@@ -141,7 +152,7 @@ async function main() {
     }
   }
 
-  console.log(`\nDone. Migrated ${migrated}, failed ${failed}, conflicts skipped ${conflicts.length}.`);
+  console.log(`\nDone. Migrated ${migrated}, failed ${failed}, missing ${missing}, conflicts skipped ${conflicts.length}.`);
   await mongoose.disconnect();
 }
 
